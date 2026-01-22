@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Real-time Message Schema",
+  "description": "Message object structure designed for real-time messaging applications",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the message"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["text", "image", "file", "system", "typing", "read_receipt"],
+      "description": "Type of message for real-time handling"
+    },
+    "content": {
+      "type": "string",
+      "description": "The message content/body"
+    },
+    "sender": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the sender"
+        },
+        "username": {
+          "type": "string",
+          "description": "Display name of the sender"
+        },
+        "avatar_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to sender's avatar image"
+        }
+      },
+      "required": ["id", "username"]
+    },
+    "channel_id": {
+      "type": "string",
+      "description": "ID of the channel/room where the message is sent"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when message was created"
+    },
+    "edited_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp when message was last edited"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "client_id": {
+          "type": "string",
+          "description": "Client-generated ID for optimistic updates"
+        },
+        "reply_to": {
+          "type": ["string", "null"],
+          "description": "ID of the message being replied to"
+        },
+        "thread_id": {
+          "type": ["string", "null"],
+          "description": "Thread ID for threaded conversations"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "filename": { "type": "string" },
+              "size_bytes": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "sent", "delivered", "read", "failed"],
+      "description": "Real-time delivery status of the message"
+    }
+  },
+  "required": ["id", "type", "content", "sender", "channel_id", "timestamp", "status"]
+}

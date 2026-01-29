@@ -9,5 +9,10 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "expo": "^54.0.31",
+    "react-dom": "19.1.0",
+    "react-native-web": "^0.21.0"
+  }
 }

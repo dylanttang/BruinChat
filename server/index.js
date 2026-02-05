@@ -45,5 +45,9 @@ mongoose.connect(MONGODB_URI, {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Server accessible at http://172.26.73.220:${PORT} (for mobile devices)`);
+  if (process.env.SERVER_PUBLIC_URL) {
+    console.log(`For mobile devices, use: ${process.env.SERVER_PUBLIC_URL}`);
+  } else {
+    console.log(`For mobile devices, set SERVER_PUBLIC_URL in .env to your computer's IP (e.g. http://192.168.1.100:${PORT})`);
+  }
 });

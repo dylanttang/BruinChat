@@ -2,11 +2,8 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { useState } from 'react';
 
-// Change this to your computer's local IP when testing on physical device
-// Use your computer's IP address instead of localhost when testing on a physical device
-const API_URL = __DEV__ 
-  ? 'http://172.26.73.220:3000'  // Your computer's IP (update if it changes)
-  : 'http://localhost:3000';      // For web/emulator
+// API URL from env - each dev sets EXPO_PUBLIC_API_URL in client/.env (see .env.example)
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 export default function App() {
   const [serverStatus, setServerStatus] = useState(null);

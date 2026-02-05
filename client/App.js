@@ -3,18 +3,51 @@ import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { useState } from 'react';
 
 // Change this to your computer's local IP when testing on physical device
-const API_URL = 'http://localhost:3000';
+// Use your computer's IP address instead of localhost when testing on a physical device
+const API_URL = __DEV__ 
+  ? 'http://172.26.73.220:3000'  // Your computer's IP (update if it changes)
+  : 'http://localhost:3000';      // For web/emulator
 
 export default function App() {
   const [serverStatus, setServerStatus] = useState(null);
 
   const checkServer = async () => {
+    setServerStatus('Connecting...');
+    let timeoutId;
     try {
-      const res = await fetch(`${API_URL}/api/health`);
+      console.log('Attempting to connect to:', API_URL);
+      
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const res = await fetch(`${API_URL}/api/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
-      setServerStatus(`Server OK at ${data.timestamp}`);
+      setServerStatus(`Server OK! Mongo: ${data.mongo || 'unknown'}`);
+      console.log('Server response:', data);
     } catch (err) {
-      setServerStatus('Server not reachable');
+      if (timeoutId) clearTimeout(timeoutId);
+      let errorMsg = 'Unknown error';
+      if (err.name === 'AbortError') {
+        errorMsg = 'Connection timeout - check firewall/network';
+      } else {
+        errorMsg = err.message || 'Unknown error';
+      }
+      setServerStatus(`Error: ${errorMsg}`);
+      console.error('Connection error:', err);
     }
   };
 

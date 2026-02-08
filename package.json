@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "expo": "^54.0.31",
+    "expo": "^54.0.32",
     "react-dom": "19.1.0",
     "react-native-web": "^0.21.0"
   }

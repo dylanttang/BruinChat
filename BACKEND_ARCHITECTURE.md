@@ -26,16 +26,16 @@ To add during implementation:
 
 ---
 
-## Authentication (Proposed)
+## Authentication
 
-**Approach:** Google OAuth 2.0, restricted to `@g.ucla.edu` emails.
+**Approach:** Google OAuth 2.0, restricted to `@ucla.edu` emails.
 
-### How it would work
+### How it works
 
 1. User taps "Sign in with Google" in the app
 2. Google returns an ID token to the client
 3. Client sends the ID token to our backend (`POST /api/auth/google`)
-4. Backend verifies the token with Google, checks for `@g.ucla.edu` email
+4. Backend verifies the token with Google, checks for `@ucla.edu` email
 5. Backend creates or finds the user, returns a JWT
 6. Client includes the JWT on all future requests (`Authorization: Bearer <token>`)
 
@@ -60,7 +60,7 @@ const ticket = await client.verifyIdToken({
   audience: GOOGLE_CLIENT_ID,
 });
 const { sub, email, name, picture } = ticket.getPayload();
-// sub = Google user ID, email = their @g.ucla.edu address
+// sub = Google user ID, email = their @ucla.edu address
 ```
 
 ---
@@ -88,7 +88,7 @@ This is the model for UCLA classes, populated from the UCLA API (see Class Data 
 | Field | Type | Notes |
 |-------|------|-------|
 | `googleId` | String, required, unique | From Google OAuth |
-| `email` | String, required, unique | Must be `@g.ucla.edu` |
+| `email` | String, required, unique | Must be `@ucla.edu` |
 | `courses` | [ObjectId] ref Course | Classes the user selected |
 
 Existing fields (`username`, `displayName`, `avatarUrl`) stay as-is.
@@ -116,7 +116,7 @@ UCLA SIS Public API — no authentication required.
 GET https://api.ucla.edu/sis/publicapis/course/getcoursedetail?subjectarea=COM+SCI
 ```
 
-Returns every approved course for that subject area. There are **160 subject areas** at UCLA with **~5,000+ courses total**.
+Returns every approved course for that subject area. There are **~250 subject areas** at UCLA with **~5,000+ courses total**.
 
 ### What the API returns
 
@@ -139,7 +139,7 @@ Returns every approved course for that subject area. There are **160 subject are
 
 A script at `scripts/fetchCourses.js` (to be written) that:
 
-1. Loops through all 160 subject areas
+1. Loops through all ~250 subject areas
 2. Calls the UCLA API for each one
 3. Parses `course_title` into `number` and `title`
 4. Tags each course with a `term` (e.g. `"Spring 2025"`)
@@ -178,7 +178,6 @@ Once per quarter. The catalog doesn't change mid-quarter. Run the script before 
 
 These need team input before we implement:
 
-- **Auth approach** — Is Google OAuth with `@g.ucla.edu` the way to go? Any concerns?
 - **Real-time messaging** — REST polling works for MVP, but we'll need WebSockets (likely Socket.io) for instant message delivery. Needs its own design.
 - **DMs** — Just group chats, or also direct messages between users?
 - **Leaving chats** — Can users leave a class chat without deselecting the course?

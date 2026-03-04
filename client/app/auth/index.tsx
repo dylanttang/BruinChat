@@ -10,7 +10,7 @@ export default function AuthIndex() {
 
       <Button
         title="Log In"
-        onPress={() => router.replace("/tabs/home")}
+        onPress={() => router.replace("/auth/questionnaire/step3")}
       />
     </View>
   );

@@ -146,9 +146,7 @@ export default function AddCoursesScreen() {
               </TouchableOpacity>
             )}
 
-            <Text style={styles.addMore}>
-              {selectedCourses.length} / {MAX_COURSES} courses
-            </Text>
+            <Text style={styles.addMore}>Add More Classes</Text>
 
             <TouchableOpacity
               style={styles.continueBtn}

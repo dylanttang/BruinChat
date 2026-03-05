@@ -12,6 +12,6 @@ const courseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-courseSchema.index({ subjectArea: 1, number: 1, term: 1 }, { unique: true });
+courseSchema.index({ subjectArea: 1, number: 1, title: 1, term: 1 }, { unique: true });
 
 module.exports = mongoose.model('Course', courseSchema);

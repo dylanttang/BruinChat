@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import coursesRoutes from './routes/courses.js';
 
 dotenv.config();
 
@@ -19,12 +20,15 @@ app.get('/', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   const isConnected = mongoose.connection.readyState === 1;
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     mongo: isConnected ? 'connected' : 'disconnected'
   });
 });
+
+// API routes
+app.use('/api/courses', coursesRoutes);
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;

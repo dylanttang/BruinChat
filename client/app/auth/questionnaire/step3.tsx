@@ -7,56 +7,101 @@ import {
   Modal,
   TextInput,
   Pressable,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+const MAX_COURSES = 8;
+
+// Common abbreviations students use → official SOC subject area codes
+const ALIASES: Record<string, string> = {
+  "CS": "COM SCI",
+  "EE": "EC ENGR",
+  "LS": "LIFESCI",
+  "POLI SCI": "POL SCI",
+  "POLISCI": "POL SCI",
+  "ASTRO": "ASTR",
+  "MECH E": "MECH&AE",
+  "MAE": "MECH&AE",
+  "CEE": "C&EE",
+};
+
+type Course = {
+  _id: string;
+  subjectArea: string;
+  number: string;
+  title: string;
+};
+
 export default function AddCoursesScreen() {
   const router = useRouter();
-  const [courses, setCourses] = useState([
-    {
-      id: "1",
-      name: "CS 31 Lecture 1",
-      subtitle: "Discussion 1E",
-      time1: "M, W, F 10:00–11:00 AM",
-      time2: "TR 3:00 PM",
-    },
-  ]);
+  const [selectedCourses, setSelectedCourses] = useState<Course[]>([]);
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [search, setSearch] = useState("");
 
-  const availableCourses = [
-    "CS 32",
-    "CS 33",
-    "GEOL 101",
-    "MATH 61",
-    "PHYSICS 5A",
-  ];
+  useEffect(() => {
+    fetch(`${API_URL}/api/courses`)
+      .then((res) => res.json())
+      .then((data) => setAllCourses(data.courses))
+      .catch((err) => console.error("Failed to fetch courses:", err))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const filteredCourses = availableCourses.filter((c) =>
-    c.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredCourses = search.length > 0
+    ? allCourses
+        .filter((c) => {
+          const query = search.toLowerCase();
+          const label = `${c.subjectArea} ${c.number} ${c.title}`.toLowerCase();
+          if (label.includes(query)) return true;
 
-  const addCourse = (courseName: string) => {
-    const newCourse = {
-      id: Date.now().toString(),
-      name: courseName,
-      subtitle: "Discussion TBD",
-      time1: "Schedule TBD",
-      time2: "",
-    };
+          // Also match without spaces (e.g. "CS32" matches "COM SCI 32")
+          const queryNoSpaces = query.replace(/\s+/g, "");
+          const labelNoSpaces = label.replace(/\s+/g, "");
+          if (labelNoSpaces.includes(queryNoSpaces)) return true;
 
-    setCourses([...courses, newCourse]);
+          // Check if query starts with a known alias
+          for (const [alias, real] of Object.entries(ALIASES)) {
+            const aliasLower = alias.toLowerCase();
+            if (query.startsWith(aliasLower)) {
+              const expanded = real.toLowerCase() + query.slice(alias.length);
+              if (label.includes(expanded)) return true;
+            }
+            // Also check without spaces (e.g. "cs32" → "comsci32")
+            if (queryNoSpaces.startsWith(aliasLower.replace(/\s+/g, ""))) {
+              const expanded = real.toLowerCase().replace(/\s+/g, "") + queryNoSpaces.slice(aliasLower.replace(/\s+/g, "").length);
+              if (labelNoSpaces.includes(expanded)) return true;
+            }
+          }
+          return false;
+        })
+        .slice(0, 20)
+    : [];
+
+  const addCourse = (course: Course) => {
+    if (selectedCourses.some((c) => c._id === course._id)) return;
+    setSelectedCourses([...selectedCourses, course]);
     setModalVisible(false);
     setSearch("");
   };
 
   const removeCourse = (id: string) => {
-    setCourses(courses.filter((c) => c.id !== id));
+    setSelectedCourses(selectedCourses.filter((c) => c._id !== id));
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color="#888" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -64,21 +109,21 @@ export default function AddCoursesScreen() {
 
       {/* COURSE LIST */}
       <FlatList
-        data={courses}
-        keyExtractor={(item) => item.id}
+        data={selectedCourses}
+        keyExtractor={(item) => item._id}
         contentContainerStyle={{ paddingBottom: 20 }}
         renderItem={({ item }) => (
           <View style={styles.courseCard}>
-            <View>
-              <Text style={styles.courseName}>{item.name}</Text>
-              <Text style={styles.subtitle}>{item.subtitle}</Text>
-              <Text style={styles.time}>{item.time1}</Text>
-              {item.time2 ? <Text style={styles.time}>{item.time2}</Text> : null}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.courseName}>
+                {item.subjectArea} {item.number}
+              </Text>
+              <Text style={styles.subtitle}>{item.title}</Text>
             </View>
 
             <TouchableOpacity
               style={styles.removeBtn}
-              onPress={() => removeCourse(item.id)}
+              onPress={() => removeCourse(item._id)}
             >
               <Ionicons name="close" size={18} />
             </TouchableOpacity>
@@ -87,13 +132,19 @@ export default function AddCoursesScreen() {
         ListFooterComponent={
           <>
             {/* ADD CLASS BUTTON */}
-            <TouchableOpacity
-              style={styles.addClassCard}
-              onPress={() => setModalVisible(true)}
-            >
-              <Text style={{ color: "#888" }}>Add Class</Text>
-              <Ionicons name="add" size={20} color="#888" />
-            </TouchableOpacity>
+            {selectedCourses.length >= MAX_COURSES ? (
+              <View style={[styles.addClassCard, { opacity: 0.4 }]}>
+                <Text style={{ color: "#888" }}>Maximum {MAX_COURSES} courses</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.addClassCard}
+                onPress={() => setModalVisible(true)}
+              >
+                <Text style={{ color: "#888" }}>Add Class</Text>
+                <Ionicons name="add" size={20} color="#888" />
+              </TouchableOpacity>
+            )}
 
             <Text style={styles.addMore}>Add More Classes</Text>
 
@@ -125,33 +176,29 @@ export default function AddCoursesScreen() {
                 value={search}
                 onChangeText={setSearch}
                 style={{ flex: 1 }}
+                autoFocus
               />
               <Ionicons name="search" size={20} />
             </View>
 
             {/* SEARCH RESULTS */}
-            {search.length > 0 &&
-              filteredCourses.map((course) => (
-                <Pressable
-                  key={course}
-                  onPress={() => addCourse(course)}
-                >
+            <FlatList
+              data={filteredCourses}
+              keyExtractor={(item) => item._id}
+              style={{ maxHeight: 200 }}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable onPress={() => addCourse(item)}>
                   <Text style={styles.searchResult}>
-                    {course}
+                    {item.subjectArea} {item.number} — {item.title}
                   </Text>
                 </Pressable>
-              ))}
-
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={() => addCourse(search)}
-            >
-              <Text style={{ color: "white" }}>Add Class</Text>
-            </TouchableOpacity>
+              )}
+            />
 
             <TouchableOpacity
               style={styles.cancelBtn}
-              onPress={() => setModalVisible(false)}
+              onPress={() => { setModalVisible(false); setSearch(""); }}
             >
               <Text>Cancel</Text>
             </TouchableOpacity>
@@ -193,11 +240,6 @@ const styles = StyleSheet.create({
 
   subtitle: {
     color: "#666",
-  },
-
-  time: {
-    fontSize: 12,
-    color: "#555",
   },
 
   removeBtn: {
@@ -285,14 +327,6 @@ const styles = StyleSheet.create({
   searchResult: {
     paddingVertical: 8,
     fontSize: 16,
-  },
-
-  addBtn: {
-    backgroundColor: "#666",
-    padding: 14,
-    borderRadius: 20,
-    alignItems: "center",
-    marginTop: 15,
   },
 
   cancelBtn: {

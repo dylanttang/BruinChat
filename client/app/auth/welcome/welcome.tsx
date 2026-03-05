@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
 
 export default function Welcome() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -46,6 +48,14 @@ export default function Welcome() {
 
       <TouchableOpacity style={{ backgroundColor: "#888", borderRadius: 25, paddingVertical: 14, alignItems: "center", alignSelf: "center", paddingHorizontal: 48 }}>
         <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>Sign In</Text>
+      </TouchableOpacity>
+
+      {/* TODO: Remove this once Google OAuth is working */}
+      <TouchableOpacity
+        style={{ marginTop: 24, alignSelf: "center" }}
+        onPress={() => router.replace("/auth/questionnaire/step3")}
+      >
+        <Text style={{ fontSize: 14, color: "#aaa" }}>Skip (Dev)</Text>
       </TouchableOpacity>
     </View>
   );

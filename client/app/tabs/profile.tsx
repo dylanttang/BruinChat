@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 const courses = [
@@ -9,7 +10,7 @@ const courses = [
 
 export default function Profile() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       {/* Settings icon top right */}
       <TouchableOpacity style={styles.settingsIcon}>
         <Ionicons name="options-outline" size={26} />
@@ -52,7 +53,7 @@ export default function Profile() {
       <TouchableOpacity style={styles.editButton}>
         <Text style={styles.editText}>Edit Courses</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -65,14 +66,14 @@ const styles = StyleSheet.create({
 
   settingsIcon: {
     position: "absolute",
-    top: 50,
+    top: 10,
     right: 20,
     padding: 20,
   },
 
   avatarWrapper: {
     alignSelf: "center",
-    marginTop: 70,
+    marginTop: 30,
   },
 
   avatar: {

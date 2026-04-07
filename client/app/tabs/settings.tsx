@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
 
 export default function Settings() {
@@ -14,6 +15,7 @@ export default function Settings() {
   );
 
   return (
+    <SafeAreaView style={styles.safeArea}>
     <ScrollView style={styles.container}>
       <Text style={styles.header}>Settings</Text>
 
@@ -59,10 +61,16 @@ export default function Settings() {
         <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+
   container: {
     flex: 1,
     padding: 20,
@@ -73,7 +81,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "700",
     marginBottom: 10,
-    marginTop: 60,
+    marginTop: 10,
   },
 
   section: {

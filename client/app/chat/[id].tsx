@@ -61,7 +61,9 @@ export default function ChatScreen() {
 
         <Text style={styles.title}>Group {id}</Text>
 
-        <View style={styles.menuDot} />
+        <TouchableOpacity onPress={() => router.push(`/chat/${id}/info`)}>
+          <Text style={styles.menuDot}>•••</Text>
+        </TouchableOpacity>
       </View>
 
       {/* MESSAGES */}
@@ -127,10 +129,9 @@ const styles = StyleSheet.create({
   },
 
   menuDot: {
-    width: 24,
-    height: 24,
-    backgroundColor: "#ddd",
-    borderRadius: 6,
+    fontSize: 16,
+    color: "#555",
+    letterSpacing: 2,
   },
 
   /* LIST */

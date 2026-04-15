@@ -10,8 +10,9 @@ export default function AuthIndex() {
 
       <Button
         title="Log In"
-        onPress={() => router.replace("/auth/logo/logo")}
+        onPress={() => router.replace("/auth/questionnaire/step1")}
       />
+
     </View>
   );
 }

@@ -2,15 +2,15 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from "react-native
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
-import { useTheme, Colors } from "../context/ThemeContext";
+import { useTheme, Colors } from "./context/ThemeContext";
 
-const chats = [
-  { id: "1", name: "Group Chat Name", lastMessage: "Last message sent...", time: "2:41 PM" },
-  { id: "2", name: "Group Chat Name", lastMessage: "Last message sent...", time: "1:18 PM" },
-  { id: "3", name: "Group Chat Name", lastMessage: "Last message sent...", time: "Yesterday" },
+const archivedChats = [
+  { id: "1", name: "Class group A", lastMessage: "last message sent" },
+  { id: "2", name: "Class group A", lastMessage: "last message sent" },
+  { id: "3", name: "Class group A", lastMessage: "last message sent" },
 ];
 
-export default function Home() {
+export default function ArchivedClasses() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -19,27 +19,25 @@ export default function Home() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.iconPlaceholder} />
-        <Text style={styles.title}>BruinChat</Text>
-        <View style={styles.iconPlaceholder} />
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={styles.back}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Archived Classes</Text>
+        <View style={{ width: 32 }} />
       </View>
 
       {/* Chat List */}
       <FlatList
-        data={chats}
+        data={archivedChats}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.chatRow}
-            onPress={() => router.push(`/chat/${item.id}`)}
-          >
+          <TouchableOpacity style={styles.chatRow}>
             <View style={styles.avatar} />
             <View style={styles.chatText}>
               <Text style={styles.chatName}>{item.name}</Text>
               <Text style={styles.lastMessage}>{item.lastMessage}</Text>
             </View>
-            <Text style={styles.time}>{item.time}</Text>
           </TouchableOpacity>
         )}
       />
@@ -54,7 +52,7 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.background,
     },
     header: {
-      height: 90,
+      height: 56,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
@@ -62,16 +60,14 @@ function makeStyles(colors: Colors) {
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
-    title: {
-      fontSize: 20,
-      fontWeight: "600",
+    back: {
+      fontSize: 22,
       color: colors.text,
     },
-    iconPlaceholder: {
-      width: 32,
-      height: 32,
-      backgroundColor: colors.avatarBg,
-      borderRadius: 4,
+    title: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.text,
     },
     list: {
       paddingTop: 8,
@@ -103,10 +99,6 @@ function makeStyles(colors: Colors) {
       fontSize: 14,
       color: colors.subtext,
       marginTop: 2,
-    },
-    time: {
-      fontSize: 12,
-      color: colors.mutedText,
     },
   });
 }

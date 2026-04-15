@@ -1,9 +1,13 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { useMemo } from "react";
+import { useTheme, Colors } from "../../context/ThemeContext";
 
 export default function ChatInfo() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const courseDetails = {
     professor: "Name",
@@ -56,7 +60,10 @@ export default function ChatInfo() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Members</Text>
           {members.map((member, index) => (
-            <View key={index} style={[styles.memberRow, index === members.length - 1 && { borderBottomWidth: 0 }]}>
+            <View
+              key={index}
+              style={[styles.memberRow, index === members.length - 1 && { borderBottomWidth: 0 }]}
+            >
               <View style={styles.avatar} />
               <Text style={styles.memberName}>{member.username}</Text>
               <Text style={styles.memberCourses}>{member.courses}</Text>
@@ -73,97 +80,103 @@ export default function ChatInfo() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  header: {
-    height: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  back: {
-    fontSize: 22,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  content: {
-    padding: 16,
-  },
-  card: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#eee",
-    padding: 12,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontWeight: "600",
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f2f2f2",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
-  },
-  value: {
-    fontSize: 14,
-    color: "#666",
-  },
-  overviewPlaceholder: {
-    height: 100,
-    backgroundColor: "#f2f2f2",
-    borderRadius: 8,
-  },
-  memberRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f2f2f2",
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    backgroundColor: "#ddd",
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  memberName: {
-    fontSize: 14,
-    color: "#333",
-    flex: 1,
-  },
-  memberCourses: {
-    fontSize: 13,
-    color: "#999",
-  },
-  leaveButton: {
-    borderWidth: 1,
-    borderColor: "red",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  leaveText: {
-    fontSize: 16,
-    color: "red",
-    fontWeight: "600",
-  },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      height: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    back: {
+      fontSize: 22,
+      color: colors.text,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    content: {
+      padding: 16,
+    },
+    card: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 12,
+      marginBottom: 16,
+      backgroundColor: colors.card,
+    },
+    sectionTitle: {
+      fontWeight: "600",
+      fontSize: 16,
+      marginBottom: 10,
+      color: colors.text,
+    },
+    row: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.separator,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "500",
+      color: colors.text,
+    },
+    value: {
+      fontSize: 14,
+      color: colors.subtext,
+    },
+    overviewPlaceholder: {
+      height: 100,
+      backgroundColor: colors.inputBg,
+      borderRadius: 8,
+    },
+    memberRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.separator,
+    },
+    avatar: {
+      width: 36,
+      height: 36,
+      backgroundColor: colors.avatarBg,
+      borderRadius: 8,
+      marginRight: 12,
+    },
+    memberName: {
+      fontSize: 14,
+      color: colors.text,
+      flex: 1,
+    },
+    memberCourses: {
+      fontSize: 13,
+      color: colors.mutedText,
+    },
+    leaveButton: {
+      borderWidth: 1,
+      borderColor: "red",
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+      marginBottom: 20,
+    },
+    leaveText: {
+      fontSize: 16,
+      color: "red",
+      fontWeight: "600",
+    },
+  });
+}

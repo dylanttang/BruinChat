@@ -1,18 +1,51 @@
-import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import { apiFetch } from "../lib/api";
 import { useTheme, Colors } from "../context/ThemeContext";
 
-const courses = [
-  { id: "1", title: "CS 31 Lecture 1", subtitle: "Discussion 1E", time: "M, W, F 10:00–11:00 AM" },
-  { id: "2", title: "CS 33 Lecture 3", subtitle: "Discussion 1E", time: "TR 3:00 PM" },
-  { id: "3", title: "GEOL Lecture 1", subtitle: "Discussion 1E", time: "M, W, F 10:00–11:00 AM" },
-];
+type Course = {
+  _id: string;
+  subjectArea: string;
+  number: string;
+  title: string;
+};
+
+type User = {
+  _id: string;
+  displayName: string;
+  username: string;
+  courses: Course[];
+};
 
 export default function Profile() {
+  const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      apiFetch("/api/users/me")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => setUser(data?.user ?? null))
+        .catch((err) => console.error("Failed to load user:", err))
+        .finally(() => setLoading(false));
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -30,27 +63,43 @@ export default function Profile() {
       </View>
 
       {/* Name */}
-      <Text style={styles.name}>FirstName LastName</Text>
+      <Text style={styles.name}>
+        {loading ? " " : user?.displayName ?? "Unknown User"}
+      </Text>
 
       {/* Courses Card */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>My Courses</Text>
-        <FlatList
-          data={courses}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.courseRow}>
-              <View>
-                <Text style={styles.courseTitle}>{item.title}</Text>
-                <Text style={styles.courseSubtitle}>{item.subtitle}</Text>
+
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.mutedText} style={{ paddingVertical: 16 }} />
+        ) : !user?.courses || user.courses.length === 0 ? (
+          <Text style={{ color: colors.subtext, paddingVertical: 16 }}>
+            No courses yet. Tap "Edit Courses" below to add some.
+          </Text>
+        ) : (
+          <FlatList
+            data={user.courses}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => (
+              <View style={styles.courseRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.courseTitle}>
+                    {item.subjectArea} {item.number}
+                  </Text>
+                  <Text style={styles.courseSubtitle}>{item.title}</Text>
+                </View>
               </View>
-              <Text style={styles.courseTime}>{item.time}</Text>
-            </View>
-          )}
-        />
+            )}
+            scrollEnabled={false}
+          />
+        )}
       </View>
 
-      <TouchableOpacity style={styles.editButton}>
+      <TouchableOpacity
+        style={styles.editButton}
+        onPress={() => router.push("/auth/questionnaire/step3")}
+      >
         <Text style={styles.editText}>Edit Courses</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -122,11 +171,6 @@ function makeStyles(colors: Colors) {
     },
     courseSubtitle: {
       color: colors.subtext,
-    },
-    courseTime: {
-      fontSize: 12,
-      color: colors.subtext,
-      paddingVertical: 5,
     },
     editButton: {
       marginTop: 25,

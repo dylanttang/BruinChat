@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useMemo } from "react";
 import { useRouter } from "expo-router";
 import { useTheme, ThemeMode, Colors } from "../context/ThemeContext";
+import { clearDevUserId } from "../lib/api";
 
 const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
   { label: "System default", value: "system" },
@@ -18,6 +19,20 @@ export default function Settings() {
   const [pause, setPause] = useState(false);
   const [classNotif, setClassNotif] = useState(true);
   const [replyNotif, setReplyNotif] = useState(true);
+
+  const signOut = () => {
+    Alert.alert("Sign out?", "You'll be taken back to the sign-in screen.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: async () => {
+          await clearDevUserId();
+          router.replace("/auth/welcome/welcome");
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -81,7 +96,7 @@ export default function Settings() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.signOut}>
+        <TouchableOpacity style={styles.signOut} onPress={signOut}>
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>
       </ScrollView>

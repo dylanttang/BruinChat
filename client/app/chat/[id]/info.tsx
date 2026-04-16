@@ -1,8 +1,9 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { useTheme, Colors } from "../../context/ThemeContext";
 
 type Member = {
   _id: string;
@@ -27,6 +28,9 @@ type Chat = {
 export default function ChatInfo() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [chat, setChat] = useState<Chat | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +45,7 @@ export default function ChatInfo() {
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator color="#888" />
+        <ActivityIndicator color={colors.mutedText} />
       </SafeAreaView>
     );
   }
@@ -49,7 +53,7 @@ export default function ChatInfo() {
   if (!chat) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <Text style={{ color: "#888" }}>Chat not found.</Text>
+        <Text style={{ color: colors.subtext }}>Chat not found.</Text>
       </SafeAreaView>
     );
   }
@@ -115,91 +119,97 @@ export default function ChatInfo() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  header: {
-    height: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  back: {
-    fontSize: 22,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-    flex: 1,
-    textAlign: "center",
-    paddingHorizontal: 12,
-  },
-  content: {
-    padding: 16,
-  },
-  card: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#eee",
-    padding: 12,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontWeight: "600",
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f2f2f2",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
-  },
-  value: {
-    fontSize: 14,
-    color: "#666",
-  },
-  memberRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f2f2f2",
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    backgroundColor: "#ddd",
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  memberName: {
-    fontSize: 14,
-    color: "#333",
-    flex: 1,
-  },
-  leaveButton: {
-    borderWidth: 1,
-    borderColor: "red",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  leaveText: {
-    fontSize: 16,
-    color: "red",
-    fontWeight: "600",
-  },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      height: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    back: {
+      fontSize: 22,
+      color: colors.text,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: "600",
+      flex: 1,
+      textAlign: "center",
+      paddingHorizontal: 12,
+      color: colors.text,
+    },
+    content: {
+      padding: 16,
+    },
+    card: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 12,
+      marginBottom: 16,
+      backgroundColor: colors.card,
+    },
+    sectionTitle: {
+      fontWeight: "600",
+      fontSize: 16,
+      marginBottom: 10,
+      color: colors.text,
+    },
+    row: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.separator,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "500",
+      color: colors.text,
+    },
+    value: {
+      fontSize: 14,
+      color: colors.subtext,
+    },
+    memberRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.separator,
+    },
+    avatar: {
+      width: 36,
+      height: 36,
+      backgroundColor: colors.avatarBg,
+      borderRadius: 8,
+      marginRight: 12,
+    },
+    memberName: {
+      fontSize: 14,
+      color: colors.text,
+      flex: 1,
+    },
+    leaveButton: {
+      borderWidth: 1,
+      borderColor: "red",
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+      marginBottom: 20,
+    },
+    leaveText: {
+      fontSize: 16,
+      color: "red",
+      fontWeight: "600",
+    },
+  });
+}

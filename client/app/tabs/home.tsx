@@ -9,8 +9,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { useTheme, Colors } from "../context/ThemeContext";
 
 type Chat = {
   _id: string;
@@ -38,6 +39,9 @@ function formatTime(iso: string | null): string {
 
 export default function Home() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -77,11 +81,11 @@ export default function Home() {
 
       {loading ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator size="large" color="#888" />
+          <ActivityIndicator size="large" color={colors.mutedText} />
         </View>
       ) : chats.length === 0 ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }}>
-          <Text style={{ fontSize: 16, color: "#888", textAlign: "center" }}>
+          <Text style={{ fontSize: 16, color: colors.subtext, textAlign: "center" }}>
             No chats yet. Add classes to get started.
           </Text>
         </View>
@@ -91,7 +95,7 @@ export default function Home() {
           keyExtractor={(item) => item._id}
           contentContainerStyle={styles.list}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.mutedText} />
           }
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -116,72 +120,66 @@ export default function Home() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-
-  header: {
-    height: 90,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-  },
-
-  title: {
-    fontSize: 20,
-    fontWeight: "600",
-  },
-
-  iconPlaceholder: {
-    width: 32,
-    height: 32,
-    backgroundColor: "#ddd",
-    borderRadius: 4,
-  },
-
-  list: {
-    paddingTop: 8,
-  },
-
-  chatRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-
-  avatar: {
-    width: 48,
-    height: 48,
-    backgroundColor: "#ccc",
-    borderRadius: 8,
-    marginRight: 12,
-  },
-
-  chatText: {
-    flex: 1,
-  },
-
-  chatName: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-
-  lastMessage: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 2,
-  },
-
-  time: {
-    fontSize: 12,
-    color: "#999",
-  },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      height: 90,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    title: {
+      fontSize: 20,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    iconPlaceholder: {
+      width: 32,
+      height: 32,
+      backgroundColor: colors.avatarBg,
+      borderRadius: 4,
+    },
+    list: {
+      paddingTop: 8,
+    },
+    chatRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    avatar: {
+      width: 48,
+      height: 48,
+      backgroundColor: colors.avatarBg,
+      borderRadius: 8,
+      marginRight: 12,
+    },
+    chatText: {
+      flex: 1,
+    },
+    chatName: {
+      fontSize: 16,
+      fontWeight: "500",
+      color: colors.text,
+    },
+    lastMessage: {
+      fontSize: 14,
+      color: colors.subtext,
+      marginTop: 2,
+    },
+    time: {
+      fontSize: 12,
+      color: colors.mutedText,
+    },
+  });
+}

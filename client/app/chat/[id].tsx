@@ -11,9 +11,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MessageBubble from "../components/messageBubble";
 import { apiFetch, getDevUserId } from "../lib/api";
+import { useTheme, Colors } from "../context/ThemeContext";
 
 type Message = {
   _id: string;
@@ -35,6 +36,8 @@ function formatTime(iso: string): string {
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const listRef = useRef<FlatList>(null);
 
   const [message, setMessage] = useState("");
@@ -83,7 +86,6 @@ export default function ChatScreen() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      // Prepend because FlatList is inverted
       setMessages((prev) => [data.message, ...prev]);
       setMessage("");
     } catch (err) {
@@ -113,11 +115,11 @@ export default function ChatScreen() {
       {/* MESSAGES */}
       {loading ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator color="#888" />
+          <ActivityIndicator color={colors.mutedText} />
         </View>
       ) : messages.length === 0 ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
-          <Text style={{ color: "#888", textAlign: "center" }}>
+          <Text style={{ color: colors.subtext, textAlign: "center" }}>
             No messages yet. Say hi!
           </Text>
         </View>
@@ -143,16 +145,15 @@ export default function ChatScreen() {
       )}
 
       {/* INPUT BAR */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.inputBar}>
           <TouchableOpacity style={styles.plusBtn}>
-            <Text style={{ fontSize: 22 }}>＋</Text>
+            <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
           </TouchableOpacity>
 
           <TextInput
             placeholder="Type a message..."
+            placeholderTextColor={colors.mutedText}
             style={styles.input}
             value={message}
             onChangeText={setMessage}
@@ -161,7 +162,7 @@ export default function ChatScreen() {
           />
 
           <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || !message.trim()}>
-            <Text style={{ fontSize: 18, opacity: sending || !message.trim() ? 0.3 : 1 }}>➤</Text>
+            <Text style={{ fontSize: 18, color: colors.text, opacity: sending || !message.trim() ? 0.3 : 1 }}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -169,74 +170,67 @@ export default function ChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-
-  /* HEADER */
-  header: {
-    height: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-  },
-
-  back: {
-    fontSize: 22,
-  },
-
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-    flex: 1,
-    textAlign: "center",
-    paddingHorizontal: 12,
-  },
-
-  menuDot: {
-    fontSize: 16,
-    color: "#555",
-    letterSpacing: 2,
-  },
-
-  /* LIST */
-  list: {
-    padding: 12,
-  },
-
-  /* INPUT BAR */
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    borderTopWidth: 1,
-    borderColor: "#eee",
-  },
-
-  input: {
-    flex: 1,
-    backgroundColor: "#f2f2f2",
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    height: 44,
-    marginHorizontal: 8,
-  },
-
-  plusBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#eee",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  sendBtn: {
-    paddingHorizontal: 6,
-  },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      height: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    back: {
+      fontSize: 22,
+      color: colors.text,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: "600",
+      flex: 1,
+      textAlign: "center",
+      paddingHorizontal: 12,
+      color: colors.text,
+    },
+    menuDot: {
+      fontSize: 16,
+      color: colors.subtext,
+      letterSpacing: 2,
+    },
+    list: {
+      padding: 12,
+    },
+    inputBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: 10,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+    },
+    input: {
+      flex: 1,
+      backgroundColor: colors.inputBg,
+      borderRadius: 22,
+      paddingHorizontal: 16,
+      height: 44,
+      marginHorizontal: 8,
+      color: colors.text,
+    },
+    plusBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.inputBg,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    sendBtn: {
+      paddingHorizontal: 6,
+    },
+  });
+}

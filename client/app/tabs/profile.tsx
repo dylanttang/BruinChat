@@ -10,8 +10,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { useTheme, Colors } from "../context/ThemeContext";
 
 type Course = {
   _id: string;
@@ -29,6 +30,9 @@ type User = {
 
 export default function Profile() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -47,13 +51,12 @@ export default function Profile() {
     <SafeAreaView style={styles.container}>
       {/* Settings icon top right */}
       <TouchableOpacity style={styles.settingsIcon}>
-        <Ionicons name="options-outline" size={26} />
+        <Ionicons name="options-outline" size={26} color={colors.text} />
       </TouchableOpacity>
 
       {/* Avatar */}
       <View style={styles.avatarWrapper}>
         <Image style={styles.avatar} />
-
         <TouchableOpacity style={styles.editAvatar}>
           <Ionicons name="pencil" size={16} color="white" />
         </TouchableOpacity>
@@ -69,9 +72,9 @@ export default function Profile() {
         <Text style={styles.cardTitle}>My Courses</Text>
 
         {loading ? (
-          <ActivityIndicator size="small" color="#888" style={{ paddingVertical: 16 }} />
+          <ActivityIndicator size="small" color={colors.mutedText} style={{ paddingVertical: 16 }} />
         ) : !user?.courses || user.courses.length === 0 ? (
-          <Text style={{ color: "#888", paddingVertical: 16 }}>
+          <Text style={{ color: colors.subtext, paddingVertical: 16 }}>
             No courses yet. Tap "Edit Courses" below to add some.
           </Text>
         ) : (
@@ -103,88 +106,83 @@ export default function Profile() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: "#fff",
-  },
-
-  settingsIcon: {
-    position: "absolute",
-    top: 10,
-    right: 20,
-    padding: 20,
-  },
-
-  avatarWrapper: {
-    alignSelf: "center",
-    marginTop: 30,
-  },
-
-  avatar: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: "#ddd",
-  },
-
-  editAvatar: {
-    position: "absolute",
-    bottom: 8,
-    right: 8,
-    backgroundColor: "#333",
-    padding: 6,
-    borderRadius: 20,
-  },
-
-  name: {
-    fontSize: 24,
-    fontWeight: "600",
-    textAlign: "center",
-    marginVertical: 20,
-  },
-
-  card: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#eee",
-    padding: 16,
-  },
-
-  cardTitle: {
-    fontWeight: "600",
-    fontSize: 18,
-    marginBottom: 10,
-  },
-
-  courseRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderColor: "#f1f1f1",
-  },
-
-  courseTitle: {
-    fontWeight: "500",
-    paddingVertical: 5,
-  },
-
-  courseSubtitle: {
-    color: "#777",
-  },
-
-  editButton: {
-    marginTop: 25,
-    alignSelf: "center",
-    backgroundColor: "#ddd",
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 20,
-  },
-
-  editText: {
-    fontWeight: "500",
-  },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 20,
+      backgroundColor: colors.background,
+    },
+    settingsIcon: {
+      position: "absolute",
+      top: 10,
+      right: 20,
+      padding: 20,
+    },
+    avatarWrapper: {
+      alignSelf: "center",
+      marginTop: 30,
+    },
+    avatar: {
+      width: 160,
+      height: 160,
+      borderRadius: 80,
+      backgroundColor: colors.avatarBg,
+    },
+    editAvatar: {
+      position: "absolute",
+      bottom: 8,
+      right: 8,
+      backgroundColor: "#333",
+      padding: 6,
+      borderRadius: 20,
+    },
+    name: {
+      fontSize: 24,
+      fontWeight: "600",
+      textAlign: "center",
+      marginVertical: 20,
+      color: colors.text,
+    },
+    card: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 16,
+      backgroundColor: colors.card,
+    },
+    cardTitle: {
+      fontWeight: "600",
+      fontSize: 18,
+      marginBottom: 10,
+      color: colors.text,
+    },
+    courseRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingVertical: 15,
+      borderBottomWidth: 1,
+      borderColor: colors.separator,
+    },
+    courseTitle: {
+      fontWeight: "500",
+      paddingVertical: 5,
+      color: colors.text,
+    },
+    courseSubtitle: {
+      color: colors.subtext,
+    },
+    editButton: {
+      marginTop: 25,
+      alignSelf: "center",
+      backgroundColor: colors.inputBg,
+      paddingHorizontal: 30,
+      paddingVertical: 12,
+      borderRadius: 20,
+    },
+    editText: {
+      fontWeight: "500",
+      color: colors.text,
+    },
+  });
+}

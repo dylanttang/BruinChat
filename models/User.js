@@ -5,6 +5,7 @@ const userSchema = new mongoose.Schema(
     username: { type: String, required: true, trim: true, lowercase: true },
     displayName: { type: String, required: true, trim: true },
     avatarUrl: { type: String, default: '' },
+    courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
     // NOTE: for now we seed fake users without auth; later replace this with hashedPassword, etc.
   },
   { timestamps: true }

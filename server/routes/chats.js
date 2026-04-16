@@ -24,6 +24,38 @@ router.get('/', devAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/chats/:id — Get a single chat (populated members and course)
+// ---------------------------------------------------------------------------
+router.get('/:id', devAuth, async (req, res) => {
+  try {
+    const chatId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+      return res.status(400).json({ error: 'Invalid chat ID' });
+    }
+
+    const chat = await Chat.findById(chatId)
+      .populate('members', '_id displayName avatarUrl')
+      .populate('course')
+      .lean();
+
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+
+    const isMember = chat.members.some(
+      (m) => m._id.toString() === req.user._id.toString()
+    );
+    if (!isMember) {
+      return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
+    res.json({ chat });
+  } catch (err) {
+    console.error('GET /api/chats/:id error:', err);
+    res.status(500).json({ error: 'Failed to fetch chat' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/chats/:id/messages — Get messages in a chat (cursor-paginated)
 //
 // Query params:

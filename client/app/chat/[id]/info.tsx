@@ -1,18 +1,58 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { apiFetch } from "../../lib/api";
+
+type Member = {
+  _id: string;
+  displayName: string;
+  avatarUrl: string;
+};
+
+type Course = {
+  _id: string;
+  subjectArea: string;
+  number: string;
+  title: string;
+};
+
+type Chat = {
+  _id: string;
+  name: string;
+  members: Member[];
+  course: Course | null;
+};
 
 export default function ChatInfo() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [chat, setChat] = useState<Chat | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const courseDetails = {
-    professor: "Name",
-    lectureTime: "Time",
-    midtermDates: "Dates",
-    finalDates: "Dates",
-  };
+  useEffect(() => {
+    apiFetch(`/api/chats/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setChat(data?.chat ?? null))
+      .catch((err) => console.error("Failed to load chat info:", err))
+      .finally(() => setLoading(false));
+  }, [id]);
 
-  const members = Array(8).fill({ username: "Username", courses: "Courses" });
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator color="#888" />
+      </SafeAreaView>
+    );
+  }
+
+  if (!chat) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={{ color: "#888" }}>Chat not found.</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -21,45 +61,47 @@ export default function ChatInfo() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Chat Info</Text>
+        <Text style={styles.title} numberOfLines={1}>{chat.name}</Text>
         <View style={{ width: 32 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Course Details */}
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <Text style={styles.label}>Professor</Text>
-            <Text style={styles.value}>{courseDetails.professor}</Text>
+        {/* Course Details (if this is a course chat) */}
+        {chat.course && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Course</Text>
+            <View style={styles.row}>
+              <Text style={styles.label}>Subject</Text>
+              <Text style={styles.value}>{chat.course.subjectArea}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.label}>Number</Text>
+              <Text style={styles.value}>{chat.course.number}</Text>
+            </View>
+            <View style={[styles.row, { borderBottomWidth: 0 }]}>
+              <Text style={styles.label}>Title</Text>
+              <Text style={[styles.value, { flex: 1, textAlign: "right", marginLeft: 12 }]}>
+                {chat.course.title}
+              </Text>
+            </View>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Lecture Time</Text>
-            <Text style={styles.value}>{courseDetails.lectureTime}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Midterm Dates</Text>
-            <Text style={styles.value}>{courseDetails.midtermDates}</Text>
-          </View>
-          <View style={[styles.row, { borderBottomWidth: 0 }]}>
-            <Text style={styles.label}>Final Dates</Text>
-            <Text style={styles.value}>{courseDetails.finalDates}</Text>
-          </View>
-        </View>
-
-        {/* Course Overview */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Course Overview</Text>
-          <View style={styles.overviewPlaceholder} />
-        </View>
+        )}
 
         {/* Members */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Members</Text>
-          {members.map((member, index) => (
-            <View key={index} style={[styles.memberRow, index === members.length - 1 && { borderBottomWidth: 0 }]}>
+          <Text style={styles.sectionTitle}>
+            Members ({chat.members.length})
+          </Text>
+          {chat.members.map((member, index) => (
+            <View
+              key={member._id}
+              style={[
+                styles.memberRow,
+                index === chat.members.length - 1 && { borderBottomWidth: 0 },
+              ]}
+            >
               <View style={styles.avatar} />
-              <Text style={styles.memberName}>{member.username}</Text>
-              <Text style={styles.memberCourses}>{member.courses}</Text>
+              <Text style={styles.memberName}>{member.displayName}</Text>
             </View>
           ))}
         </View>
@@ -93,6 +135,9 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: "600",
+    flex: 1,
+    textAlign: "center",
+    paddingHorizontal: 12,
   },
   content: {
     padding: 16,
@@ -125,11 +170,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
   },
-  overviewPlaceholder: {
-    height: 100,
-    backgroundColor: "#f2f2f2",
-    borderRadius: 8,
-  },
   memberRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -148,10 +188,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#333",
     flex: 1,
-  },
-  memberCourses: {
-    fontSize: 13,
-    color: "#999",
   },
   leaveButton: {
     borderWidth: 1,

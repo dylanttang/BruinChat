@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import coursesRoutes from './routes/courses.js';
 import chatsRoutes from './routes/chats.js';
+import usersRoutes from './routes/users.js';
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ app.get('/api/health', (req, res) => {
 // API routes
 app.use('/api/courses', coursesRoutes);
 app.use('/api/chats', chatsRoutes);
+app.use('/api/users', usersRoutes);
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;

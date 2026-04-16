@@ -13,8 +13,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { Alert } from "react-native";
+import { apiFetch } from "../../lib/api";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 const MAX_COURSES = 8;
 
 // Common abbreviations students use → official SOC subject area codes
@@ -46,13 +47,43 @@ export default function AddCoursesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [search, setSearch] = useState("");
 
+  const [saving, setSaving] = useState(false);
+
   useEffect(() => {
-    fetch(`${API_URL}/api/courses`)
-      .then((res) => res.json())
-      .then((data) => setAllCourses(data.courses))
-      .catch((err) => console.error("Failed to fetch courses:", err))
+    Promise.all([
+      apiFetch("/api/courses").then((res) => res.json()),
+      apiFetch("/api/users/me").then((res) => (res.ok ? res.json() : null)),
+    ])
+      .then(([coursesData, userData]) => {
+        setAllCourses(coursesData.courses);
+        if (userData?.user?.courses) {
+          setSelectedCourses(userData.user.courses);
+        }
+      })
+      .catch((err) => console.error("Failed to load:", err))
       .finally(() => setLoading(false));
   }, []);
+
+  const saveAndContinue = async () => {
+    setSaving(true);
+    try {
+      const res = await apiFetch("/api/users/me/courses", {
+        method: "PUT",
+        body: JSON.stringify({
+          courseIds: selectedCourses.map((c) => c._id),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      router.replace("/tabs/home");
+    } catch (err: any) {
+      Alert.alert("Failed to save courses", err.message || "Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const filteredCourses = search.length > 0
     ? allCourses
@@ -149,14 +180,15 @@ export default function AddCoursesScreen() {
             <Text style={styles.addMore}>Add More Classes</Text>
 
             <TouchableOpacity
-              style={styles.continueBtn}
-              onPress={() => router.replace("/tabs/home")}
+              style={[styles.continueBtn, saving && { opacity: 0.5 }]}
+              onPress={saveAndContinue}
+              disabled={saving}
             >
-              <Text style={styles.continueText}>Continue</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.skipBtn}>
-              <Text style={styles.skipText}>Skip</Text>
+              {saving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.continueText}>Continue</Text>
+              )}
             </TouchableOpacity>
           </>
         }

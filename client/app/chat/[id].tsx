@@ -7,49 +7,91 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MessageBubble from "../components/messageBubble";
+import { apiFetch, getDevUserId } from "../lib/api";
+
+type Message = {
+  _id: string;
+  text: string;
+  createdAt: string;
+  senderId: { _id: string; displayName: string; avatarUrl: string };
+};
+
+type Chat = {
+  _id: string;
+  name: string;
+  members: { _id: string; displayName: string }[];
+};
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
 
 export default function ChatScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const listRef = useRef<FlatList>(null);
 
   const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chat, setChat] = useState<Chat | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
 
-  // mock data
-  const messages = [
-    {
-      id: "1",
-      user: "Alex",
-      text: "Hey everyone!",
-      time: "2:10 PM",
-      mine: false,
-    },
-    {
-      id: "2",
-      user: "Alex",
-      text: "Are we meeting today?",
-      time: "2:11 PM",
-      mine: false,
-    },
-    {
-      id: "3",
-      user: "Me",
-      text: "Yep 👍",
-      time: "2:12 PM",
-      mine: true,
-    },
-    {
-      id: "4",
-      user: "Me",
-      text: "Library at 6?",
-      time: "2:12 PM",
-      mine: true,
-    },
-  ];
+  const loadData = useCallback(async () => {
+    try {
+      const [userId, chatRes, msgsRes] = await Promise.all([
+        getDevUserId(),
+        apiFetch(`/api/chats/${id}`),
+        apiFetch(`/api/chats/${id}/messages`),
+      ]);
+      setCurrentUserId(userId);
+
+      if (chatRes.ok) {
+        const data = await chatRes.json();
+        setChat(data.chat);
+      }
+      if (msgsRes.ok) {
+        const data = await msgsRes.json();
+        setMessages(data.messages);
+      }
+    } catch (err) {
+      console.error("Failed to load chat:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const sendMessage = async () => {
+    const text = message.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      const res = await apiFetch(`/api/chats/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      // Prepend because FlatList is inverted
+      setMessages((prev) => [data.message, ...prev]);
+      setMessage("");
+    } catch (err) {
+      console.error("Failed to send:", err);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -59,7 +101,9 @@ export default function ChatScreen() {
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>Group {id}</Text>
+        <Text style={styles.title} numberOfLines={1}>
+          {chat?.name ?? "Loading..."}
+        </Text>
 
         <TouchableOpacity onPress={() => router.push(`/chat/${id}/info`)}>
           <Text style={styles.menuDot}>•••</Text>
@@ -67,34 +111,57 @@ export default function ChatScreen() {
       </View>
 
       {/* MESSAGES */}
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => <MessageBubble item={item} />}
-      />
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator color="#888" />
+        </View>
+      ) : messages.length === 0 ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
+          <Text style={{ color: "#888", textAlign: "center" }}>
+            No messages yet. Say hi!
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={messages}
+          inverted
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <MessageBubble
+              item={{
+                id: item._id,
+                user: item.senderId.displayName,
+                text: item.text,
+                time: formatTime(item.createdAt),
+                mine: currentUserId === item.senderId._id,
+              }}
+            />
+          )}
+        />
+      )}
 
       {/* INPUT BAR */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.inputBar}>
-          {/* Plus button */}
           <TouchableOpacity style={styles.plusBtn}>
             <Text style={{ fontSize: 22 }}>＋</Text>
           </TouchableOpacity>
 
-          {/* Text input */}
           <TextInput
             placeholder="Type a message..."
             style={styles.input}
             value={message}
             onChangeText={setMessage}
+            onSubmitEditing={sendMessage}
+            editable={!sending}
           />
 
-          {/* Send */}
-          <TouchableOpacity style={styles.sendBtn}>
-            <Text style={{ fontSize: 18 }}>➤</Text>
+          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || !message.trim()}>
+            <Text style={{ fontSize: 18, opacity: sending || !message.trim() ? 0.3 : 1 }}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -126,6 +193,9 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: "600",
+    flex: 1,
+    textAlign: "center",
+    paddingHorizontal: 12,
   },
 
   menuDot: {
@@ -153,7 +223,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f2f2f2",
     borderRadius: 22,
     paddingHorizontal: 16,
-    height: 44, 
+    height: 44,
     marginHorizontal: 8,
   },
 

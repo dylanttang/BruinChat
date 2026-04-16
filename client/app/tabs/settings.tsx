@@ -1,11 +1,28 @@
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
+import { useRouter } from "expo-router";
+import { clearDevUserId } from "../lib/api";
 
 export default function Settings() {
+  const router = useRouter();
   const [pause, setPause] = useState(false);
   const [classNotif, setClassNotif] = useState(true);
   const [replyNotif, setReplyNotif] = useState(true);
+
+  const signOut = () => {
+    Alert.alert("Sign out?", "You'll be taken back to the sign-in screen.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: async () => {
+          await clearDevUserId();
+          router.replace("/auth/welcome/welcome");
+        },
+      },
+    ]);
+  };
 
   const Row = ({ title, right }: any) => (
     <View style={styles.row}>
@@ -57,7 +74,7 @@ export default function Settings() {
         <Row title="View archived classes" right={<Text>›</Text>} />
       </View>
 
-      <TouchableOpacity style={styles.signOut}>
+      <TouchableOpacity style={styles.signOut} onPress={signOut}>
         <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
     </ScrollView>

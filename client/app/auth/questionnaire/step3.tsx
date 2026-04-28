@@ -136,6 +136,10 @@ export default function AddCoursesScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <Ionicons name="arrow-back" size={24} color="#333" />
+      </TouchableOpacity>
+
       <Text style={styles.title}>Add your Enrolled Courses</Text>
 
       {/* COURSE LIST */}
@@ -246,6 +250,12 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     backgroundColor: "#fff",
+  },
+
+  backBtn: {
+    alignSelf: "flex-start",
+    padding: 8,
+    marginBottom: -16,
   },
 
   title: {

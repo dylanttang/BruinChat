@@ -17,6 +17,7 @@ type Chat = {
   _id: string;
   name: string;
   lastMessageAt: string | null;
+  lastMessageText: string | null;
   members: { _id: string; displayName: string }[];
 };
 
@@ -107,7 +108,7 @@ export default function Home() {
               <View style={styles.chatText}>
                 <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.lastMessage} numberOfLines={1}>
-                  {item.members.length} {item.members.length === 1 ? "member" : "members"}
+                  {item.lastMessageText ?? "No messages yet"}
                 </Text>
               </View>
 

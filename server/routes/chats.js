@@ -16,7 +16,21 @@ router.get('/', devAuth, async (req, res) => {
       .populate('members', '_id displayName avatarUrl')
       .lean();
 
-    res.json({ chats });
+    // Attach the most recent message text to each chat
+    const chatIds = chats.map((c) => c._id);
+    const latestMessages = await Message.aggregate([
+      { $match: { chatId: { $in: chatIds } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$chatId', text: { $first: '$text' }, senderId: { $first: '$senderId' } } },
+    ]);
+    const latestByChat = Object.fromEntries(latestMessages.map((m) => [m._id.toString(), m]));
+
+    const enriched = chats.map((c) => ({
+      ...c,
+      lastMessageText: latestByChat[c._id.toString()]?.text ?? null,
+    }));
+
+    res.json({ chats: enriched });
   } catch (err) {
     console.error('GET /api/chats error:', err);
     res.status(500).json({ error: 'Failed to fetch chats' });
@@ -103,6 +117,7 @@ router.get('/:id/messages', devAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit + 1)
       .populate('senderId', '_id displayName avatarUrl')
+      .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } })
       .lean();
 
     const hasMore = messages.length > limit;
@@ -147,7 +162,7 @@ router.post('/:id/messages', devAuth, async (req, res) => {
     }
 
     // Validate body
-    const { text, mediaUrl } = req.body;
+    const { text, mediaUrl, replyTo } = req.body;
     if ((!text || !text.trim()) && (!mediaUrl || !mediaUrl.trim())) {
       return res.status(400).json({ error: 'Message must include text or mediaUrl' });
     }
@@ -158,6 +173,7 @@ router.post('/:id/messages', devAuth, async (req, res) => {
       senderId: req.user._id,
       text: text?.trim() || '',
       mediaUrl: mediaUrl?.trim() || '',
+      ...(replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? { replyTo } : {}),
     });
 
     // Update the chat's lastMessageAt
@@ -166,6 +182,7 @@ router.post('/:id/messages', devAuth, async (req, res) => {
     // Populate sender info before returning
     const populated = await Message.findById(message._id)
       .populate('senderId', '_id displayName avatarUrl')
+      .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } })
       .lean();
 
     res.status(201).json({ message: populated });

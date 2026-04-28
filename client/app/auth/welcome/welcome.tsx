@@ -50,19 +50,7 @@ export default function Welcome() {
     await setDevUserId(user._id);
     setDevPickerVisible(false);
 
-    // Skip course picker for returning users who've already enrolled in classes
-    try {
-      const res = await apiFetch("/api/users/me");
-      const data = await res.json();
-      if (res.ok && data.user?.courses?.length > 0) {
-        router.replace("/tabs/home");
-        return;
-      }
-    } catch (err) {
-      console.error("Failed to check user courses:", err);
-    }
-
-    router.replace("/auth/questionnaire/step3");
+    router.replace("/auth/questionnaire/step1");
   };
 
   return (

@@ -115,9 +115,9 @@ function makeStyles(colors: Colors) {
     },
     settingsIcon: {
       position: "absolute",
-      top: 10,
+      top: 50,
       right: 20,
-      padding: 20,
+      padding: 8,
     },
     avatarWrapper: {
       alignSelf: "center",

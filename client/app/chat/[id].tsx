@@ -21,7 +21,54 @@ type Message = {
   text: string;
   createdAt: string;
   senderId: { _id: string; displayName: string; avatarUrl: string };
+  replyTo?: { _id: string; text: string; senderId: { displayName: string } } | null;
 };
+
+type DateSeparator = { _id: string; type: "date"; label: string };
+type ListItem = Message | DateSeparator;
+
+function formatDateLabel(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) return "Today";
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate();
+  if (isYesterday) return "Yesterday";
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+function injectDateSeparators(messages: Message[]): ListItem[] {
+  // messages are newest-first (inverted list), so iterate and inject separators
+  const result: ListItem[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    result.push(messages[i]);
+    const curr = new Date(messages[i].createdAt);
+    const next = messages[i + 1] ? new Date(messages[i + 1].createdAt) : null;
+    const isDifferentDay =
+      !next ||
+      curr.getFullYear() !== next.getFullYear() ||
+      curr.getMonth() !== next.getMonth() ||
+      curr.getDate() !== next.getDate();
+    if (isDifferentDay) {
+      result.push({ _id: `sep-${messages[i]._id}`, type: "date", label: formatDateLabel(messages[i].createdAt) });
+    }
+  }
+  return result;
+}
 
 type Chat = {
   _id: string;
@@ -46,6 +93,7 @@ export default function ChatScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -82,12 +130,13 @@ export default function ChatScreen() {
     try {
       const res = await apiFetch(`/api/chats/${id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, ...(replyingTo ? { replyTo: replyingTo._id } : {}) }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setMessages((prev) => [data.message, ...prev]);
       setMessage("");
+      setReplyingTo(null);
     } catch (err) {
       console.error("Failed to send:", err);
     } finally {
@@ -126,26 +175,49 @@ export default function ChatScreen() {
       ) : (
         <FlatList
           ref={listRef}
-          data={messages}
+          data={injectDateSeparators(messages)}
           inverted
           keyExtractor={(item) => item._id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <MessageBubble
-              item={{
-                id: item._id,
-                user: item.senderId.displayName,
-                text: item.text,
-                time: formatTime(item.createdAt),
-                mine: currentUserId === item.senderId._id,
-              }}
-            />
-          )}
+          renderItem={({ item }) => {
+            if ("type" in item && item.type === "date") {
+              return (
+                <View style={styles.dateSeparator}>
+                  <Text style={styles.dateSeparatorText}>{item.label}</Text>
+                </View>
+              );
+            }
+            const msg = item as Message;
+            return (
+              <MessageBubble
+                item={{
+                  id: msg._id,
+                  user: msg.senderId.displayName,
+                  text: msg.text,
+                  time: formatTime(msg.createdAt),
+                  mine: currentUserId === msg.senderId._id,
+                  replyTo: msg.replyTo ?? null,
+                }}
+                onLongPress={() => setReplyingTo(msg)}
+              />
+            );
+          }}
         />
       )}
 
       {/* INPUT BAR */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        {replyingTo && (
+          <View style={styles.replyBar}>
+            <View style={styles.replyBarContent}>
+              <Text style={styles.replyBarName}>{replyingTo.senderId.displayName}</Text>
+              <Text style={styles.replyBarText} numberOfLines={1}>{replyingTo.text}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyBarClose}>
+              <Text style={{ fontSize: 18, color: colors.mutedText }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.inputBar}>
           <TouchableOpacity style={styles.plusBtn}>
             <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
@@ -231,6 +303,38 @@ function makeStyles(colors: Colors) {
     },
     sendBtn: {
       paddingHorizontal: 6,
+    },
+    dateSeparator: {
+      alignItems: "center",
+      marginVertical: 12,
+    },
+    dateSeparatorText: {
+      fontSize: 12,
+      color: colors.mutedText,
+    },
+    replyBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    replyBarContent: {
+      flex: 1,
+    },
+    replyBarName: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    replyBarText: {
+      fontSize: 12,
+      color: colors.subtext,
+    },
+    replyBarClose: {
+      paddingLeft: 12,
     },
   });
 }

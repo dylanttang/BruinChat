@@ -26,7 +26,9 @@ export async function apiFetch(
 ): Promise<Response> {
   const userId = await getDevUserId();
   const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
+  if (!(init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (userId) headers.set("x-user-id", userId);
 
   return fetch(`${API_URL}${path}`, { ...init, headers });

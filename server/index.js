@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import coursesRoutes from './routes/courses.js';
 import chatsRoutes from './routes/chats.js';
 import { createServer } from 'http';
@@ -18,13 +20,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
-  }
-});
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Trust the first proxy in front of us (load balancer / cloud host) so
 // req.ip reflects the real client IP. Without this, all requests appear to
@@ -34,6 +30,7 @@ app.set('trust proxy', 1);
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Attach io to req
 app.use((req, res, next) => {

@@ -1,5 +1,10 @@
 import { Router } from 'express';
+import fs from 'fs';
 import mongoose from 'mongoose';
+import multer from 'multer';
+import path from 'path';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
 import Chat from '../../models/Chat.js';
 import Message from '../../models/Message.js';
 import User from '../../models/User.js';
@@ -11,6 +16,52 @@ const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
 const CHAT_LIST_MAX_LIMIT = 50;
 const MAX_REACTION_LENGTH = 16;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadDir = path.join(__dirname, '..', 'uploads', 'chat-photos');
+const MAX_MEDIA_SIZE = 10 * 1024 * 1024;
+const allowedMediaTypes = new Map([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+].map((mimeType) => [mimeType, 'image']));
+[
+  'video/mp4',
+  'video/quicktime',
+  'video/x-m4v',
+  'video/webm',
+].forEach((mimeType) => allowedMediaTypes.set(mimeType, 'video'));
+const mediaLabelByType = {
+  image: '[Photo]',
+  video: '[Video]',
+};
+const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']);
+const videoExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm']);
+
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: MAX_MEDIA_SIZE,
+    files: 10,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!getMediaKind(file.mimetype)) {
+      cb(new Error('Only image and video uploads are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 function parseLimit(value, defaultLimit, maxLimit) {
   const parsed = parseInt(value, 10);
@@ -23,6 +74,59 @@ function populateMessage(query) {
     .populate('senderId', '_id displayName avatarUrl')
     .populate('reactions.userId', '_id displayName')
     .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } });
+}
+
+function getMediaKind(mimeType) {
+  return allowedMediaTypes.get(mimeType);
+}
+
+function getMessageMediaLabel(message) {
+  const mediaType = message?.mediaTypes?.[0] || (message?.mediaUrl ? 'image' : null);
+  return mediaLabelByType[mediaType] || '[Media]';
+}
+
+function inferMediaKindFromUrl(url) {
+  const ext = path.extname(url || '').toLowerCase();
+  if (videoExtensions.has(ext)) return 'video';
+  if (imageExtensions.has(ext)) return 'image';
+  return 'image';
+}
+
+function deleteUploadedFiles(files = []) {
+  for (const file of files) {
+    if (file?.path) {
+      fs.unlink(file.path, () => {});
+    }
+  }
+}
+
+function deleteMessageMediaFiles(message) {
+  const urls = [...(message.mediaUrls || []), message.mediaUrl].filter(Boolean);
+  for (const url of urls) {
+    if (!url.startsWith('/uploads/chat-photos/')) continue;
+    const filename = path.basename(url);
+    fs.unlink(path.join(uploadDir, filename), () => {});
+  }
+}
+
+async function requireChatMember(chatId, userId) {
+  if (!mongoose.Types.ObjectId.isValid(chatId)) {
+    return { status: 400, error: 'Invalid chat ID' };
+  }
+
+  const chat = await Chat.findById(chatId).lean();
+  if (!chat) {
+    return { status: 404, error: 'Chat not found' };
+  }
+
+  const isMember = chat.members.some(
+    (memberId) => memberId.toString() === userId.toString()
+  );
+  if (!isMember) {
+    return { status: 403, error: 'You are not a member of this chat' };
+  }
+
+  return { chat };
 }
 
 // ---------------------------------------------------------------------------
@@ -80,13 +184,27 @@ router.get('/', devAuth, async (req, res) => {
     const latestMessages = await Message.aggregate([
       { $match: { chatId: { $in: chatIds } } },
       { $sort: { createdAt: -1 } },
-      { $group: { _id: '$chatId', text: { $first: '$text' }, senderId: { $first: '$senderId' } } },
+      {
+        $group: {
+          _id: '$chatId',
+          text: { $first: '$text' },
+          mediaUrl: { $first: '$mediaUrl' },
+          mediaUrls: { $first: '$mediaUrls' },
+          mediaTypes: { $first: '$mediaTypes' },
+          senderId: { $first: '$senderId' },
+        },
+      },
     ]);
     const latestByChat = Object.fromEntries(latestMessages.map((m) => [m._id.toString(), m]));
 
     const enriched = chats.map((c) => ({
       ...c,
-      lastMessageText: latestByChat[c._id.toString()]?.text ?? null,
+      lastMessageText:
+        latestByChat[c._id.toString()]?.text ||
+        (latestByChat[c._id.toString()]?.mediaUrl ||
+        latestByChat[c._id.toString()]?.mediaUrls?.length
+          ? getMessageMediaLabel(latestByChat[c._id.toString()])
+          : null),
     }));
 
     res.json({
@@ -283,9 +401,17 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
     }
 
     // Validate body
-    const { text, mediaUrl, replyTo } = req.body;
+    const { text, mediaUrl, mediaUrls, mediaTypes, replyTo } = req.body;
+    const cleanedMediaUrls = Array.isArray(mediaUrls)
+      ? mediaUrls.filter((url) => typeof url === 'string' && url.trim()).map((url) => url.trim())
+      : [];
+    const cleanedMediaTypes = Array.isArray(mediaTypes)
+      ? mediaTypes.filter((type) => type === 'image' || type === 'video')
+      : cleanedMediaUrls.map(inferMediaKindFromUrl);
     if ((!text || !text.trim()) && (!mediaUrl || !mediaUrl.trim())) {
-      return res.status(400).json({ error: 'Message must include text or mediaUrl' });
+      if (cleanedMediaUrls.length === 0) {
+        return res.status(400).json({ error: 'Message must include text or media' });
+      }
     }
 
     // Create the message
@@ -293,7 +419,9 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
       chatId,
       senderId: req.user._id,
       text: text?.trim() || '',
-      mediaUrl: mediaUrl?.trim() || '',
+      mediaUrl: mediaUrl?.trim() || cleanedMediaUrls[0] || '',
+      mediaUrls: cleanedMediaUrls,
+      mediaTypes: cleanedMediaTypes.slice(0, cleanedMediaUrls.length),
       ...(replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? { replyTo } : {}),
     });
 
@@ -342,6 +470,64 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
     console.error('POST /api/chats/:id/messages error:', err);
     res.status(500).json({ error: 'Failed to send message' });
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/chats/:id/messages/media — Upload media and create one message
+// ---------------------------------------------------------------------------
+router.post('/:id/messages/media', devAuth, messageSendRateLimit, (req, res) => {
+  upload.array('media', 10)(req, res, async (uploadErr) => {
+    if (uploadErr) {
+      deleteUploadedFiles(req.files);
+      const status = uploadErr instanceof multer.MulterError ? 400 : 415;
+      return res.status(status).json({ error: uploadErr.message || 'Failed to upload media' });
+    }
+
+    try {
+      if (req.user.bannedAt) {
+        deleteUploadedFiles(req.files);
+        return res.status(403).json({ error: 'Your account has been banned' });
+      }
+
+      const chatId = req.params.id;
+      const membership = await requireChatMember(chatId, req.user._id);
+      if (membership.error) {
+        deleteUploadedFiles(req.files);
+        return res.status(membership.status).json({ error: membership.error });
+      }
+
+      const files = req.files || [];
+      if (files.length === 0) {
+        return res.status(400).json({ error: 'At least one media file is required' });
+      }
+
+      const mediaUrls = files.map((file) => `/uploads/chat-photos/${file.filename}`);
+      const mediaTypes = files.map((file) => getMediaKind(file.mimetype) || inferMediaKindFromUrl(file.filename));
+      const { replyTo } = req.body;
+      const message = await Message.create({
+        chatId,
+        senderId: req.user._id,
+        text: '',
+        mediaUrl: mediaUrls[0],
+        mediaUrls,
+        mediaTypes,
+        ...(replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? { replyTo } : {}),
+      });
+
+      await Chat.findByIdAndUpdate(chatId, { lastMessageAt: message.createdAt });
+      const populated = await populateMessage(Message.findById(message._id)).lean();
+
+      if (req.io) {
+        req.io.to(chatId).emit('newMessage', populated);
+      }
+
+      res.status(201).json({ message: populated });
+    } catch (err) {
+      deleteUploadedFiles(req.files);
+      console.error('POST /api/chats/:id/messages/media error:', err);
+      res.status(500).json({ error: err.message || 'Failed to upload media' });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -517,8 +703,11 @@ router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
       return res.status(403).json({ error: 'Only the sender can delete this message' });
     }
 
+    deleteMessageMediaFiles(message);
     message.text = '';
     message.mediaUrl = '';
+    message.mediaUrls = [];
+    message.mediaTypes = [];
     message.deletedAt = new Date();
     await message.save();
 

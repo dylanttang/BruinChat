@@ -6,6 +6,8 @@ const messageSchema = new mongoose.Schema(
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     text: { type: String, trim: true, default: '' },
     mediaUrl: { type: String, default: '' },
+    mediaUrls: [{ type: String }],
+    mediaTypes: [{ type: String, enum: ['image', 'video'] }],
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     reactions: [
       {

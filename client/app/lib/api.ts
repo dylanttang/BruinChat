@@ -56,7 +56,9 @@ export async function apiFetch(
   const token = await getAuthToken();
   const userId = await getDevUserId();
   const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
+  if (!(init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   } else if (userId) {

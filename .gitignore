@@ -7,3 +7,4 @@ server/.env
 .DS_Store
 *.log
 .expo/
+server/uploads/

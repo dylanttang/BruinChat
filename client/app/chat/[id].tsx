@@ -10,11 +10,13 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  ScrollView,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
 import { apiFetch, getDevUserId } from "../lib/api";
 import { uploadToCloudinary } from "../lib/cloudinary";
@@ -23,11 +25,56 @@ import { useTheme, Colors } from "../context/ThemeContext";
 type Message = {
   _id: string;
   text: string;
-  mediaUrl?: string | null;
+  mediaUrl?: string;
+  mediaUrls?: string[];
+  mediaTypes?: ("image" | "video")[];
   createdAt: string;
   senderId: { _id: string; displayName: string; avatarUrl: string };
-  replyTo?: { _id: string; text: string; senderId: { displayName: string } } | null;
+  replyTo?: ReplyMessage | null;
 };
+
+type ReplyMessage = {
+  _id: string;
+  text: string;
+  mediaUrl?: string;
+  mediaUrls?: string[];
+  mediaTypes?: ("image" | "video")[];
+  senderId: { displayName: string };
+};
+
+type PendingMedia = {
+  uri: string;
+  type: "image" | "video";
+  fileName?: string | null;
+  mimeType?: string;
+  fileSize?: number;
+};
+
+function PendingVideoThumbnail({ uri, style }: { uri: string; style: any }) {
+  const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    VideoThumbnails.getThumbnailAsync(uri, { time: 0 })
+      .then(({ uri: generatedUri }) => {
+        if (mounted) setThumbnailUri(generatedUri);
+      })
+      .catch(() => {
+        if (mounted) setThumbnailUri(null);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [uri]);
+
+  return thumbnailUri ? (
+    <Image source={{ uri: thumbnailUri }} style={style} />
+  ) : (
+    <View style={[style, { backgroundColor: "#1f1f24" }]} />
+  );
+}
 
 type DateSeparator = { _id: string; type: "date"; label: string };
 type ListItem = Message | DateSeparator;
@@ -85,6 +132,18 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function getReplySummary(message: ReplyMessage | Message): string {
+  const text = message.text?.trim();
+  if (text) return text;
+
+  const mediaTypes = message.mediaTypes || [];
+  const mediaCount = message.mediaUrls?.length || (message.mediaUrl ? 1 : 0);
+  const firstType = mediaTypes[0] || (message.mediaUrl ? "image" : null);
+  const label = firstType === "video" ? "Video" : firstType === "image" ? "Photo" : "Media";
+
+  return mediaCount > 1 ? `[${mediaCount} ${label}s]` : `[${label}]`;
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -100,6 +159,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
 
   const loadData = useCallback(async () => {
     try {
@@ -129,57 +189,120 @@ export default function ChatScreen() {
     loadData();
   }, [loadData]);
 
+  const postTextMessage = async (text: string) => {
+    const res = await apiFetch(`/api/chats/${id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text, ...(replyingTo ? { replyTo: replyingTo._id } : {}) }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.message as Message;
+  };
+
   const sendMessage = async () => {
     const text = message.trim();
-    if (!text || sending) return;
+    if ((!text && pendingMedia.length === 0) || sending) return;
     setSending(true);
     try {
-      const res = await apiFetch(`/api/chats/${id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ text, ...(replyingTo ? { replyTo: replyingTo._id } : {}) }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setMessages((prev) => [data.message, ...prev]);
+      const newMessages: Message[] = [];
+
+      if (pendingMedia.length > 0) {
+        const formData = new FormData();
+        if (replyingTo) {
+          formData.append("replyTo", replyingTo._id);
+        }
+        pendingMedia.forEach((item, index) => {
+          formData.append("media", {
+            uri: item.uri,
+            name: item.fileName || `${item.type}-${index + 1}.${item.type === "video" ? "mp4" : "jpg"}`,
+            type: item.mimeType || (item.type === "video" ? "video/mp4" : "image/jpeg"),
+          } as any);
+        });
+
+        const mediaRes = await apiFetch(`/api/chats/${id}/messages/media`, {
+          method: "POST",
+          body: formData,
+        });
+        if (!mediaRes.ok) throw new Error(`HTTP ${mediaRes.status}`);
+        const mediaData = await mediaRes.json();
+        newMessages.push(mediaData.message);
+      }
+
+      if (text) {
+        newMessages.push(await postTextMessage(text));
+      }
+
+      setMessages((prev) => [...newMessages.reverse(), ...prev]);
       setMessage("");
+      setPendingMedia([]);
       setReplyingTo(null);
     } catch (err) {
       console.error("Failed to send:", err);
+      Alert.alert("Failed to send", "Please try again.");
     } finally {
       setSending(false);
     }
   };
 
-  const pickAndSendImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission required", "Please allow photo access to send images.");
+  const addPickedMedia = (assets: ImagePicker.ImagePickerAsset[]) => {
+    const validMedia: PendingMedia[] = assets.flatMap((asset) => {
+      const mediaType = asset.type === "video" ? "video" : asset.type === "image" ? "image" : null;
+      if (!mediaType) return [];
+      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
+        Alert.alert("File too large", "Images and videos must be 10MB or smaller.");
+        return [];
+      }
+      return [{
+        uri: asset.uri,
+        type: mediaType,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        fileSize: asset.fileSize,
+      }];
+    });
+
+    setPendingMedia((prev) => [...prev, ...validMedia].slice(0, 10));
+  };
+
+  const pickFromLibrary = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Allow photo library access to send photos.");
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
+      mediaTypes: ["images", "videos"],
+      allowsMultipleSelection: true,
+      selectionLimit: 10,
+      orderedSelection: true,
+      quality: 0.85,
     });
 
-    if (result.canceled) return;
+    if (!result.canceled) addPickedMedia(result.assets);
+  };
 
-    const uri = result.assets[0].uri;
-    setUploadingMedia(true);
-    try {
-      const mediaUrl = await uploadToCloudinary(uri, "messages");
-      const res = await apiFetch(`/api/chats/${id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ text: "", mediaUrl }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setMessages((prev) => [data.message, ...prev]);
-    } catch (err: any) {
-      Alert.alert("Upload failed", err.message ?? "Could not send image. Try again.");
-    } finally {
-      setUploadingMedia(false);
+  const takePhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Allow camera access to take photos.");
+      return;
     }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images", "videos"],
+      quality: 0.85,
+    });
+
+    if (!result.canceled) addPickedMedia(result.assets);
+  };
+
+  const openPhotoOptions = () => {
+    Alert.alert("Add media", undefined, [
+      { text: "Photo & Video Library", onPress: pickFromLibrary },
+      { text: "Camera", onPress: takePhoto },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   return (
@@ -232,7 +355,9 @@ export default function ChatScreen() {
                   id: msg._id,
                   user: msg.senderId.displayName,
                   text: msg.text,
-                  mediaUrl: msg.mediaUrl ?? null,
+                  mediaUrl: msg.mediaUrl,
+                  mediaUrls: msg.mediaUrls,
+                  mediaTypes: msg.mediaTypes,
                   time: formatTime(msg.createdAt),
                   mine: currentUserId === msg.senderId._id,
                   replyTo: msg.replyTo ?? null,
@@ -250,19 +375,42 @@ export default function ChatScreen() {
           <View style={styles.replyBar}>
             <View style={styles.replyBarContent}>
               <Text style={styles.replyBarName}>{replyingTo.senderId.displayName}</Text>
-              <Text style={styles.replyBarText} numberOfLines={1}>{replyingTo.text}</Text>
+              <Text style={styles.replyBarText} numberOfLines={1}>{getReplySummary(replyingTo)}</Text>
             </View>
             <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyBarClose}>
               <Text style={{ fontSize: 18, color: colors.mutedText }}>✕</Text>
             </TouchableOpacity>
           </View>
         )}
+        {pendingMedia.length > 0 && (
+          <View style={styles.photoPreviewBar}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoPreviewList}>
+              {pendingMedia.map((item, index) => (
+                <View key={`${item.uri}-${index}`} style={styles.photoPreviewItem}>
+                  {item.type === "video" ? (
+                    <PendingVideoThumbnail uri={item.uri} style={styles.photoPreviewImage} />
+                  ) : (
+                    <Image source={{ uri: item.uri }} style={styles.photoPreviewImage} />
+                  )}
+                  {item.type === "video" && (
+                    <View style={styles.videoPreviewBadge}>
+                      <Text style={styles.videoPreviewBadgeText}>▶</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={styles.removePhotoBtn}
+                    onPress={() => setPendingMedia((prev) => prev.filter((_, mediaIndex) => mediaIndex !== index))}
+                  >
+                    <Text style={styles.removePhotoText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.plusBtn} onPress={pickAndSendImage} disabled={uploadingMedia || sending}>
-            {uploadingMedia
-              ? <ActivityIndicator size="small" color={colors.mutedText} />
-              : <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
-            }
+          <TouchableOpacity style={styles.plusBtn} onPress={openPhotoOptions} disabled={sending}>
+            <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
           </TouchableOpacity>
 
           <TextInput
@@ -275,8 +423,8 @@ export default function ChatScreen() {
             editable={!sending}
           />
 
-          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || !message.trim()}>
-            <Text style={{ fontSize: 18, color: colors.text, opacity: sending || !message.trim() ? 0.3 : 1 }}>➤</Text>
+          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || (!message.trim() && pendingMedia.length === 0)}>
+            <Text style={{ fontSize: 18, color: colors.text, opacity: sending || (!message.trim() && pendingMedia.length === 0) ? 0.3 : 1 }}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -345,6 +493,60 @@ function makeStyles(colors: Colors) {
     },
     sendBtn: {
       paddingHorizontal: 6,
+    },
+    photoPreviewBar: {
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      paddingVertical: 8,
+    },
+    photoPreviewList: {
+      paddingHorizontal: 12,
+      gap: 8,
+    },
+    photoPreviewItem: {
+      width: 72,
+      height: 72,
+      borderRadius: 12,
+      overflow: "hidden",
+      backgroundColor: colors.inputBg,
+    },
+    photoPreviewImage: {
+      width: "100%",
+      height: "100%",
+    },
+    videoPreviewBadge: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    videoPreviewBadgeText: {
+      color: "white",
+      fontSize: 18,
+      fontWeight: "700",
+      textShadowColor: "rgba(0,0,0,0.6)",
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 4,
+    },
+    removePhotoBtn: {
+      position: "absolute",
+      top: 4,
+      right: 4,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: "rgba(0,0,0,0.6)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    removePhotoText: {
+      color: "white",
+      fontSize: 12,
+      fontWeight: "700",
     },
     dateSeparator: {
       alignItems: "center",

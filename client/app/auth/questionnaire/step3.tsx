@@ -14,8 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { apiFetch } from "../../lib/api";
-import { useTheme, Colors } from "../../context/ThemeContext";
+import { apiFetch } from "../../../lib/api";
+import { useTheme, Colors } from "../../../context/ThemeContext";
 
 const MAX_COURSES = 8;
 

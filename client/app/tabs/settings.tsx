@@ -3,8 +3,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useTheme, ThemeMode, Colors } from "../context/ThemeContext";
-import { clearDevUserId, apiFetch } from "../lib/api";
+import { useTheme, ThemeMode, Colors } from "../../context/ThemeContext";
+import { clearDevUserId, apiFetch } from "../../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
 

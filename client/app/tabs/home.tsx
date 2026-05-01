@@ -11,8 +11,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
-import { apiFetch } from "../lib/api";
-import { useTheme, Colors } from "../context/ThemeContext";
+import { apiFetch } from "../../lib/api";
+import { useTheme, Colors } from "../../context/ThemeContext";
 
 const CHAT_PAGE_SIZE = 20;
 

@@ -19,9 +19,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
-import { apiFetch, getDevUserId } from "../lib/api";
-import { createSocket } from "../lib/socket";
-import { useTheme, Colors } from "../context/ThemeContext";
+import { apiFetch, getDevUserId } from "../../lib/api";
+import { useTheme, Colors } from "../../context/ThemeContext";
+import { createSocket } from "../../lib/socket";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;

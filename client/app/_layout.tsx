@@ -1,10 +1,10 @@
 import { Stack } from "expo-router";
-import { ThemeProvider } from "./context/ThemeContext";
+import { ThemeProvider } from "../context/ThemeContext";
 import { useEffect } from "react";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
-import { apiFetch } from "./lib/api";
+import { apiFetch } from "../lib/api";
 
 async function registerForPushNotifications() {
   if (!Device.isDevice) return; // simulators can't receive push notifications
@@ -30,7 +30,6 @@ async function registerForPushNotifications() {
     body: JSON.stringify({ pushToken: token }),
   }).catch((err) => console.error("Failed to save push token:", err));
 }
-
 export default function RootLayout() {
   useEffect(() => {
     registerForPushNotifications();

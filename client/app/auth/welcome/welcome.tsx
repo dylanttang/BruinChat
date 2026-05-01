@@ -14,8 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
-import { apiFetch, setDevUserId, signInWithGoogleIdToken } from "../../lib/api";
-import { useTheme, Colors } from "../../context/ThemeContext";
+import { apiFetch, setDevUserId, signInWithGoogleIdToken } from "../../../lib/api";
+import { useTheme, Colors } from "../../../context/ThemeContext";
 
 WebBrowser.maybeCompleteAuthSession();
 

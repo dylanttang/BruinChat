@@ -17,9 +17,9 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { apiFetch } from "../lib/api";
-import { uploadToCloudinary } from "../lib/cloudinary";
-import { useTheme, Colors } from "../context/ThemeContext";
+import { apiFetch } from "../../lib/api";
+import { uploadToCloudinary } from "../../lib/cloudinary";
+import { useTheme, Colors } from "../../context/ThemeContext";
 
 type Course = {
   _id: string;

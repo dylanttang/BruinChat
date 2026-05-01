@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from "react-native
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
-import { useTheme, Colors } from "./context/ThemeContext";
+import { useTheme, Colors } from "../context/ThemeContext";
 
 const archivedChats = [
   { id: "1", name: "Class group A", lastMessage: "last message sent" },

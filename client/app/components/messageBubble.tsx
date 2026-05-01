@@ -2,8 +2,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable } fro
 import { ResizeMode, Video } from "expo-av";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useTheme, Colors } from "../context/ThemeContext";
-import { API_URL } from "../lib/api";
+import { useTheme, Colors } from "../../context/ThemeContext";
+import { API_URL } from "../../lib/api";
 
 type MediaKind = "image" | "video";
 

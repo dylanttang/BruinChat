@@ -18,9 +18,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MessageBubble from "../components/messageBubble";
-import { apiFetch, getDevUserId } from "../lib/api";
-import { uploadToCloudinary } from "../lib/cloudinary";
-import { useTheme, Colors } from "../context/ThemeContext";
+import { apiFetch, getDevUserId } from "../../lib/api";
+import { useTheme, Colors } from "../../context/ThemeContext";
 
 type Message = {
   _id: string;

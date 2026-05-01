@@ -12,8 +12,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+<<<<<<< HEAD
 import { apiFetch, setDevUserId } from "../../lib/api";
 import { useTheme, Colors } from "../../context/ThemeContext";
+=======
+import { apiFetch, setDevUserId } from "../../../lib/api";
+>>>>>>> 328579e (moved non route modules out of expo router's app tree)
 
 type DevUser = {
   _id: string;

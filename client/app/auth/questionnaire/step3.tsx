@@ -13,9 +13,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
+<<<<<<< HEAD
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { apiFetch } from "../../lib/api";
 import { useTheme, Colors } from "../../context/ThemeContext";
+=======
+import { useRouter } from "expo-router";
+import { Alert } from "react-native";
+import { apiFetch } from "../../../lib/api";
+>>>>>>> 328579e (moved non route modules out of expo router's app tree)
 
 const MAX_COURSES = 8;
 
@@ -238,6 +244,7 @@ export default function AddCoursesScreen() {
   );
 }
 
+<<<<<<< HEAD
 function makeStyles(colors: Colors) {
   return StyleSheet.create({
     container: {
@@ -355,3 +362,136 @@ function makeStyles(colors: Colors) {
     },
   });
 }
+=======
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 24,
+    backgroundColor: "#fff",
+  },
+
+  backBtn: {
+    alignSelf: "flex-start",
+    padding: 8,
+    marginBottom: -16,
+  },
+
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    textAlign: "center",
+    marginVertical: 40,
+  },
+
+  courseCard: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  courseName: {
+    fontWeight: "600",
+    fontSize: 16,
+  },
+
+  subtitle: {
+    color: "#666",
+  },
+
+  removeBtn: {
+    backgroundColor: "#eee",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  addClassCard: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+
+  addMore: {
+    textAlign: "right",
+    marginBottom: 30,
+    color: "#555",
+  },
+
+  continueBtn: {
+    backgroundColor: "#777",
+    padding: 14,
+    borderRadius: 20,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
+  continueText: {
+    color: "white",
+    fontWeight: "600",
+  },
+
+  skipBtn: {
+    backgroundColor: "#ccc",
+    padding: 14,
+    borderRadius: 20,
+    alignItems: "center",
+  },
+
+  skipText: {
+    fontWeight: "500",
+  },
+
+  /* MODAL */
+
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: 20,
+  },
+
+  modalCard: {
+    backgroundColor: "#f2f2f2",
+    borderRadius: 30,
+    padding: 24,
+  },
+
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 15,
+    backgroundColor: "white",
+  },
+
+  searchResult: {
+    paddingVertical: 8,
+    fontSize: 16,
+  },
+
+  cancelBtn: {
+    marginTop: 12,
+    alignItems: "center",
+  },
+});
+>>>>>>> 328579e (moved non route modules out of expo router's app tree)

@@ -2,8 +2,8 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "../../lib/api";
-import { useTheme, Colors } from "../../context/ThemeContext";
+import { apiFetch } from "../../../lib/api";
+import { useTheme, Colors } from "../../../context/ThemeContext";
 
 type Member = {
   _id: string;

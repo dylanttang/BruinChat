@@ -16,10 +16,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
+<<<<<<< HEAD
 import * as ImagePicker from "expo-image-picker";
 import { apiFetch } from "../lib/api";
 import { uploadToCloudinary } from "../lib/cloudinary";
 import { useTheme, Colors } from "../context/ThemeContext";
+=======
+import { apiFetch } from "../../lib/api";
+import { useTheme, Colors } from "../../context/ThemeContext";
+>>>>>>> 328579e (moved non route modules out of expo router's app tree)
 
 type Course = {
   _id: string;

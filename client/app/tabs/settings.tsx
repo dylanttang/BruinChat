@@ -1,9 +1,12 @@
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, ThemeMode, Colors } from "../context/ThemeContext";
 import { clearDevUserId } from "../lib/api";
+
+const NOTIF_KEY = "@bruinchat_notif";
 
 const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
   { label: "System default", value: "system" },
@@ -16,9 +19,45 @@ export default function Settings() {
   const { colors, mode, setMode } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [pause, setPause] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(true);
   const [classNotif, setClassNotif] = useState(true);
   const [replyNotif, setReplyNotif] = useState(true);
+
+  // Load persisted notif prefs
+  useEffect(() => {
+    AsyncStorage.getItem(NOTIF_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw);
+        if (typeof saved.notifEnabled === "boolean") setNotifEnabled(saved.notifEnabled);
+        if (typeof saved.classNotif === "boolean") setClassNotif(saved.classNotif);
+        if (typeof saved.replyNotif === "boolean") setReplyNotif(saved.replyNotif);
+      } catch {}
+    });
+  }, []);
+
+  const saveNotifPrefs = (prefs: { notifEnabled?: boolean; classNotif?: boolean; replyNotif?: boolean }) => {
+    const next = { notifEnabled, classNotif, replyNotif, ...prefs };
+    AsyncStorage.setItem(NOTIF_KEY, JSON.stringify(next));
+
+    // TODO: Sync to backend once Jonathan's push notification endpoint is ready.
+    // await apiFetch("/api/users/me/notifications", { method: "PUT", body: JSON.stringify(next) });
+  };
+
+  const handleNotifEnabled = (val: boolean) => {
+    setNotifEnabled(val);
+    saveNotifPrefs({ notifEnabled: val });
+  };
+
+  const handleClassNotif = (val: boolean) => {
+    setClassNotif(val);
+    saveNotifPrefs({ classNotif: val });
+  };
+
+  const handleReplyNotif = (val: boolean) => {
+    setReplyNotif(val);
+    saveNotifPrefs({ replyNotif: val });
+  };
 
   const signOut = () => {
     Alert.alert("Sign out?", "You'll be taken back to the sign-in screen.", [
@@ -58,16 +97,22 @@ export default function Settings() {
         <Text style={styles.section}>Notifications</Text>
         <View style={styles.card}>
           <View style={styles.row}>
-            <Text style={styles.rowText}>Pause notifications</Text>
-            <Switch value={pause} onValueChange={setPause} />
+            <Text style={styles.rowText}>Enable notifications</Text>
+            <Switch value={notifEnabled} onValueChange={handleNotifEnabled} />
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowText}>Class notifications</Text>
-            <Switch value={classNotif} onValueChange={setClassNotif} />
+          <View style={[styles.row, { opacity: notifEnabled ? 1 : 0.4 }]}>
+            <View>
+              <Text style={styles.rowText}>Class notifications</Text>
+              <Text style={styles.rowSubtext}>New messages in your classes</Text>
+            </View>
+            <Switch value={classNotif} onValueChange={handleClassNotif} disabled={!notifEnabled} />
           </View>
-          <View style={[styles.row, styles.lastRow]}>
-            <Text style={styles.rowText}>Reply notifications</Text>
-            <Switch value={replyNotif} onValueChange={setReplyNotif} />
+          <View style={[styles.row, styles.lastRow, { opacity: notifEnabled ? 1 : 0.4 }]}>
+            <View>
+              <Text style={styles.rowText}>Reply notifications</Text>
+              <Text style={styles.rowSubtext}>When someone replies to you</Text>
+            </View>
+            <Switch value={replyNotif} onValueChange={handleReplyNotif} disabled={!notifEnabled} />
           </View>
         </View>
 
@@ -170,6 +215,11 @@ function makeStyles(colors: Colors) {
     signOutText: {
       color: "red",
       fontWeight: "600",
+    },
+    rowSubtext: {
+      fontSize: 12,
+      color: colors.mutedText,
+      marginTop: 2,
     },
   });
 }

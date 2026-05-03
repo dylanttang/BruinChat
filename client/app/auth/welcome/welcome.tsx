@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,9 +8,12 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
+  StyleSheet,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { apiFetch, setDevUserId } from "../../lib/api";
+import { useTheme, Colors } from "../../context/ThemeContext";
 
 type DevUser = {
   _id: string;
@@ -20,6 +23,9 @@ type DevUser = {
 
 export default function Welcome() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -49,58 +55,50 @@ export default function Welcome() {
   const pickUser = async (user: DevUser) => {
     await setDevUserId(user._id);
     setDevPickerVisible(false);
-
     router.replace("/auth/questionnaire/step1");
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff", justifyContent: "center", paddingHorizontal: 32 }}>
-      <Text style={{ fontSize: 26, fontWeight: "bold", textAlign: "center", marginBottom: 32, lineHeight: 34 }}>
-        Sign in with your{"\n"}UCLA email
-      </Text>
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.title}>Sign in with your{"\n"}UCLA email</Text>
 
       <TextInput
-        style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 25, paddingHorizontal: 20, paddingVertical: 14, fontSize: 16, marginBottom: 16 }}
+        style={styles.input}
         placeholder="Your UCLA email"
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.mutedText}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
       />
 
       <TextInput
-        style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 25, paddingHorizontal: 20, paddingVertical: 14, fontSize: 16, marginBottom: 16 }}
+        style={styles.input}
         placeholder="Your UCLA Logon Password"
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.mutedText}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
       />
 
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <TouchableOpacity
-          style={{ flexDirection: "row", alignItems: "center" }}
-          onPress={() => setRememberMe(!rememberMe)}
-        >
-          <View style={{ width: 18, height: 18, borderWidth: 1, borderColor: "#999", marginRight: 8, backgroundColor: rememberMe ? "#666" : "transparent" }} />
-          <Text style={{ fontSize: 14, color: "#333" }}>Remember me</Text>
+      <View style={styles.row}>
+        <TouchableOpacity style={styles.rememberRow} onPress={() => setRememberMe(!rememberMe)}>
+          <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+            {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+          </View>
+          <Text style={styles.rowText}>Remember me</Text>
         </TouchableOpacity>
-
         <TouchableOpacity>
-          <Text style={{ fontSize: 14, color: "#333" }}>Forgot Password?</Text>
+          <Text style={styles.rowText}>Forgot Password?</Text>
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={{ backgroundColor: "#888", borderRadius: 25, paddingVertical: 14, alignItems: "center", alignSelf: "center", paddingHorizontal: 48 }}>
-        <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>Sign In</Text>
+      <TouchableOpacity style={styles.signInBtn}>
+        <Text style={styles.signInText}>Sign In</Text>
       </TouchableOpacity>
 
-      {/* TODO: Remove this once Google OAuth is working */}
-      <TouchableOpacity
-        style={{ marginTop: 24, alignSelf: "center" }}
-        onPress={openDevPicker}
-      >
-        <Text style={{ fontSize: 14, color: "#aaa" }}>Skip (Dev)</Text>
+      {/* TODO: Remove once Google OAuth is working */}
+      <TouchableOpacity style={styles.devBtn} onPress={openDevPicker}>
+        <Text style={styles.devText}>Skip (Dev)</Text>
       </TouchableOpacity>
 
       {/* Dev user picker */}
@@ -110,15 +108,15 @@ export default function Welcome() {
         animationType="fade"
         onRequestClose={() => setDevPickerVisible(false)}
       >
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", padding: 24 }}>
-          <View style={{ backgroundColor: "#fff", borderRadius: 20, padding: 20 }}>
-            <Text style={{ fontSize: 18, fontWeight: "600", marginBottom: 4 }}>Pick a dev user</Text>
-            <Text style={{ fontSize: 13, color: "#888", marginBottom: 16 }}>
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Pick a dev user</Text>
+            <Text style={styles.modalSubtitle}>
               Temporary — for testing until Google OAuth is wired up.
             </Text>
 
             {loadingUsers ? (
-              <ActivityIndicator size="small" color="#888" style={{ paddingVertical: 20 }} />
+              <ActivityIndicator size="small" color={colors.mutedText} style={{ paddingVertical: 20 }} />
             ) : devUsers && devUsers.length > 0 ? (
               <FlatList
                 data={devUsers}
@@ -126,33 +124,155 @@ export default function Welcome() {
                 renderItem={({ item }) => (
                   <Pressable
                     onPress={() => pickUser(item)}
-                    style={({ pressed }) => ({
-                      paddingVertical: 12,
-                      borderBottomWidth: 1,
-                      borderBottomColor: "#eee",
-                      backgroundColor: pressed ? "#f5f5f5" : "transparent",
-                    })}
+                    style={({ pressed }) => ([
+                      styles.devUserRow,
+                      { backgroundColor: pressed ? colors.inputBg : "transparent" },
+                    ])}
                   >
-                    <Text style={{ fontSize: 16 }}>{item.displayName}</Text>
-                    <Text style={{ fontSize: 12, color: "#888" }}>@{item.username}</Text>
+                    <Text style={styles.devUserName}>{item.displayName}</Text>
+                    <Text style={styles.devUserHandle}>@{item.username}</Text>
                   </Pressable>
                 )}
               />
             ) : (
-              <Text style={{ color: "#888", paddingVertical: 12 }}>
-                No users found. Run the seed script.
-              </Text>
+              <Text style={styles.emptyText}>No users found. Run the seed script.</Text>
             )}
 
-            <TouchableOpacity
-              style={{ marginTop: 16, alignItems: "center", paddingVertical: 10 }}
-              onPress={() => setDevPickerVisible(false)}
-            >
-              <Text style={{ color: "#333" }}>Cancel</Text>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setDevPickerVisible(false)}>
+              <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
+}
+
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      justifyContent: "center",
+      paddingHorizontal: 32,
+    },
+    title: {
+      fontSize: 26,
+      fontWeight: "bold",
+      textAlign: "center",
+      marginBottom: 32,
+      lineHeight: 34,
+      color: colors.text,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 25,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      fontSize: 16,
+      marginBottom: 16,
+      color: colors.text,
+      backgroundColor: colors.card,
+    },
+    row: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 24,
+    },
+    rememberRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    checkbox: {
+      width: 18,
+      height: 18,
+      borderWidth: 1,
+      borderColor: colors.mutedText,
+      marginRight: 8,
+      backgroundColor: "transparent",
+    },
+    checkboxChecked: {
+      backgroundColor: colors.subtext,
+    },
+    checkmark: {
+      color: "#fff",
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: "center",
+    },
+    rowText: {
+      fontSize: 14,
+      color: colors.text,
+    },
+    signInBtn: {
+      backgroundColor: "#888",
+      borderRadius: 25,
+      paddingVertical: 14,
+      alignItems: "center",
+      alignSelf: "center",
+      paddingHorizontal: 48,
+    },
+    signInText: {
+      color: "#fff",
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    devBtn: {
+      marginTop: 24,
+      alignSelf: "center",
+    },
+    devText: {
+      fontSize: 14,
+      color: colors.mutedText,
+    },
+    overlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.4)",
+      justifyContent: "center",
+      padding: 24,
+    },
+    modalCard: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      padding: 20,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      marginBottom: 4,
+      color: colors.text,
+    },
+    modalSubtitle: {
+      fontSize: 13,
+      color: colors.mutedText,
+      marginBottom: 16,
+    },
+    devUserRow: {
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    devUserName: {
+      fontSize: 16,
+      color: colors.text,
+    },
+    devUserHandle: {
+      fontSize: 12,
+      color: colors.mutedText,
+    },
+    emptyText: {
+      color: colors.mutedText,
+      paddingVertical: 12,
+    },
+    cancelBtn: {
+      marginTop: 16,
+      alignItems: "center",
+      paddingVertical: 10,
+    },
+    cancelText: {
+      color: colors.text,
+    },
+  });
 }

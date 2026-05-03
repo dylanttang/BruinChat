@@ -6,11 +6,13 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
 import { apiFetch } from "../lib/api";
 import { useTheme, Colors } from "../context/ThemeContext";
 
@@ -26,6 +28,7 @@ type User = {
   displayName: string;
   username: string;
   courses: Course[];
+  avatarUrl?: string;
 };
 
 export default function Profile() {
@@ -35,6 +38,7 @@ export default function Profile() {
 
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [localAvatar, setLocalAvatar] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -47,17 +51,43 @@ export default function Profile() {
     }, [])
   );
 
+  const pickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission required", "Please allow photo access to change your avatar.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const uri = result.assets[0].uri;
+    setLocalAvatar(uri);
+
+    // TODO: Upload to backend once Jonathan's endpoint is ready.
+    // Example:
+    // const formData = new FormData();
+    // formData.append("avatar", { uri, name: "avatar.jpg", type: "image/jpeg" } as any);
+    // await apiFetch("/api/users/me/avatar", { method: "POST", body: formData });
+  };
+
+  const avatarSource = localAvatar ?? user?.avatarUrl ?? null;
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Settings icon top right */}
-      <TouchableOpacity style={styles.settingsIcon}>
-        <Ionicons name="options-outline" size={26} color={colors.text} />
-      </TouchableOpacity>
-
       {/* Avatar */}
       <View style={styles.avatarWrapper}>
-        <Image style={styles.avatar} />
-        <TouchableOpacity style={styles.editAvatar}>
+        <Image
+          source={avatarSource ? { uri: avatarSource } : undefined}
+          style={styles.avatar}
+        />
+        <TouchableOpacity style={styles.editAvatar} onPress={pickAvatar}>
           <Ionicons name="pencil" size={16} color="white" />
         </TouchableOpacity>
       </View>

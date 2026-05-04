@@ -1,149 +1,304 @@
-import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
+import { apiFetch } from "../lib/api";
+import { useTheme, Colors } from "../context/ThemeContext";
 
-const courses = [
-  { id: "1", title: "CS 31 Lecture 1", subtitle: "Discussion 1E", time: "M, W, F 10:00–11:00 AM" },
-  { id: "2", title: "CS 33 Lecture 3", subtitle: "Discussion 1E", time: "TR 3:00 PM" },
-  { id: "3", title: "GEOL Lecture 1", subtitle: "Discussion 1E", time: "M, W, F 10:00–11:00 AM" },
-];
+type Course = {
+  _id: string;
+  subjectArea: string;
+  number: string;
+  title: string;
+};
+
+type User = {
+  _id: string;
+  displayName: string;
+  username: string;
+  courses: Course[];
+  avatarUrl?: string;
+};
 
 export default function Profile() {
-  return (
-    <View style={styles.container}>
-      {/* Settings icon top right */}
-      <TouchableOpacity style={styles.settingsIcon}>
-        <Ionicons name="options-outline" size={26} />
-      </TouchableOpacity>
+  const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, tabBarHeight), [colors, tabBarHeight]);
 
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [localAvatar, setLocalAvatar] = useState<string | null>(null);
+  const [courseListHeight, setCourseListHeight] = useState(0);
+  const [courseContentHeight, setCourseContentHeight] = useState(0);
+  const [courseScrollY, setCourseScrollY] = useState(0);
+
+  const courseScrollRange = Math.max(courseContentHeight - courseListHeight, 0);
+  const clampedCourseScrollY = Math.max(0, Math.min(courseScrollY, courseScrollRange));
+  const shouldShowCourseScrollbar = !!user?.courses?.length && courseListHeight > 0;
+  const courseScrollbarThumbHeight =
+    courseListHeight > 0 && courseContentHeight > courseListHeight
+      ? Math.min(courseListHeight, Math.max(36, (courseListHeight * courseListHeight) / courseContentHeight))
+      : Math.max(36, courseListHeight);
+  const courseScrollbarThumbTop =
+    courseScrollRange > 0
+      ? (clampedCourseScrollY / courseScrollRange) *
+        Math.max(courseListHeight - courseScrollbarThumbHeight, 0)
+      : 0;
+
+  const onCourseListLayout = (event: LayoutChangeEvent) => {
+    setCourseListHeight(event.nativeEvent.layout.height);
+  };
+
+  const onCourseListScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setCourseScrollY(event.nativeEvent.contentOffset.y);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      apiFetch("/api/users/me")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => setUser(data?.user ?? null))
+        .catch((err) => console.error("Failed to load user:", err))
+        .finally(() => setLoading(false));
+    }, [])
+  );
+
+  const pickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission required", "Please allow photo access to change your avatar.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const uri = result.assets[0].uri;
+    setLocalAvatar(uri);
+
+    // TODO: Upload to backend once Jonathan's endpoint is ready.
+    // Example:
+    // const formData = new FormData();
+    // formData.append("avatar", { uri, name: "avatar.jpg", type: "image/jpeg" } as any);
+    // await apiFetch("/api/users/me/avatar", { method: "POST", body: formData });
+  };
+
+  const avatarSource = localAvatar ?? user?.avatarUrl ?? null;
+
+  return (
+    <SafeAreaView style={styles.container}>
       {/* Avatar */}
       <View style={styles.avatarWrapper}>
         <Image
+          source={avatarSource ? { uri: avatarSource } : undefined}
           style={styles.avatar}
         />
-
-        <TouchableOpacity style={styles.editAvatar}>
+        <TouchableOpacity style={styles.editAvatar} onPress={pickAvatar}>
           <Ionicons name="pencil" size={16} color="white" />
         </TouchableOpacity>
       </View>
 
       {/* Name */}
-      <Text style={styles.name}>FirstName LastName</Text>
+      <Text style={styles.name}>
+        {loading ? " " : user?.displayName ?? "Unknown User"}
+      </Text>
 
       {/* Courses Card */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>My Courses</Text>
 
-        <FlatList
-          data={courses}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.courseRow}>
-              <View>
-                <Text style={styles.courseTitle}>{item.title}</Text>
-                <Text style={styles.courseSubtitle}>{item.subtitle}</Text>
-              </View>
-
-              <Text style={styles.courseTime}>{item.time}</Text>
-            </View>
-          )}
-        />
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.mutedText} style={{ paddingVertical: 16 }} />
+        ) : !user?.courses || user.courses.length === 0 ? (
+          <Text style={{ color: colors.subtext, paddingVertical: 16 }}>
+            No courses yet. Tap "Edit Courses" below to add some.
+          </Text>
+        ) : (
+          <View style={styles.courseListWrapper} onLayout={onCourseListLayout}>
+            <FlatList
+              style={styles.courseList}
+              contentContainerStyle={styles.scrollableCourseContent}
+              showsVerticalScrollIndicator
+              persistentScrollbar
+              bounces={false}
+              overScrollMode="never"
+              onContentSizeChange={(_, height) => setCourseContentHeight(height)}
+              onScroll={onCourseListScroll}
+              scrollEventThrottle={16}
+              data={user.courses}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <View style={styles.courseRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.courseTitle}>
+                      {item.subjectArea} {item.number}
+                    </Text>
+                    <Text style={styles.courseSubtitle}>{item.title}</Text>
+                  </View>
+                </View>
+              )}
+            />
+            {shouldShowCourseScrollbar && (
+              <>
+                <View pointerEvents="none" style={styles.scrollIndicatorTrack} />
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.scrollIndicatorThumb,
+                    {
+                      height: courseScrollbarThumbHeight,
+                      transform: [{ translateY: courseScrollbarThumbTop }],
+                    },
+                  ]}
+                />
+              </>
+            )}
+          </View>
+        )}
       </View>
 
-      <TouchableOpacity style={styles.editButton}>
+      <TouchableOpacity
+        style={styles.editButton}
+        onPress={() => router.push("/auth/questionnaire/step3")}
+      >
         <Text style={styles.editText}>Edit Courses</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: "#fff",
-  },
-
-  settingsIcon: {
-    position: "absolute",
-    top: 50,
-    right: 20,
-    padding: 20,
-  },
-
-  avatarWrapper: {
-    alignSelf: "center",
-    marginTop: 70,
-  },
-
-  avatar: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: "#ddd",
-  },
-
-  editAvatar: {
-    position: "absolute",
-    bottom: 8,
-    right: 8,
-    backgroundColor: "#333",
-    padding: 6,
-    borderRadius: 20,
-  },
-
-  name: {
-    fontSize: 24,
-    fontWeight: "600",
-    textAlign: "center",
-    marginVertical: 20,
-  },
-
-  card: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#eee",
-    padding: 16,
-  },
-
-  cardTitle: {
-    fontWeight: "600",
-    fontSize: 18,
-    marginBottom: 10,
-  },
-
-  courseRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderColor: "#f1f1f1",
-  },
-
-  courseTitle: {
-    fontWeight: "500",
-    paddingVertical: 5,
-  },
-
-  courseSubtitle: {
-    color: "#777",
-  },
-
-  courseTime: {
-    fontSize: 12,
-    color: "#555",
-    paddingVertical: 5,
-  },
-
-  editButton: {
-    marginTop: 25,
-    alignSelf: "center",
-    backgroundColor: "#ddd",
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 20,
-  },
-
-  editText: {
-    fontWeight: "500",
-  },
-});
+function makeStyles(colors: Colors, tabBarHeight: number) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: tabBarHeight + 20,
+      backgroundColor: colors.background,
+    },
+    settingsIcon: {
+      position: "absolute",
+      top: 50,
+      right: 20,
+      padding: 8,
+    },
+    avatarWrapper: {
+      alignSelf: "center",
+      marginTop: 4,
+    },
+    avatar: {
+      width: 112,
+      height: 112,
+      borderRadius: 56,
+      backgroundColor: colors.avatarBg,
+    },
+    editAvatar: {
+      position: "absolute",
+      bottom: 8,
+      right: 8,
+      backgroundColor: "#333",
+      padding: 6,
+      borderRadius: 20,
+    },
+    name: {
+      fontSize: 23,
+      fontWeight: "600",
+      textAlign: "center",
+      marginVertical: 6,
+      color: colors.text,
+    },
+    card: {
+      flex: 1,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 16,
+      backgroundColor: colors.card,
+    },
+    courseListWrapper: {
+      flex: 1,
+      position: "relative",
+    },
+    courseList: {
+      flex: 1,
+    },
+    scrollableCourseContent: {
+      paddingRight: 14,
+    },
+    scrollIndicatorTrack: {
+      position: "absolute",
+      top: 0,
+      right: 2,
+      bottom: 0,
+      width: 5,
+      borderRadius: 3,
+      backgroundColor: colors.mutedText,
+      opacity: 0.35,
+    },
+    scrollIndicatorThumb: {
+      position: "absolute",
+      top: 0,
+      right: 2,
+      width: 5,
+      height: 42,
+      borderRadius: 3,
+      backgroundColor: colors.mutedText,
+    },
+    cardTitle: {
+      fontWeight: "600",
+      fontSize: 18,
+      marginBottom: 10,
+      color: colors.text,
+    },
+    courseRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingVertical: 15,
+      borderBottomWidth: 1,
+      borderColor: colors.separator,
+    },
+    courseTitle: {
+      fontWeight: "500",
+      paddingVertical: 5,
+      color: colors.text,
+    },
+    courseSubtitle: {
+      color: colors.subtext,
+    },
+    editButton: {
+      marginTop: 10,
+      alignSelf: "center",
+      backgroundColor: colors.inputBg,
+      paddingHorizontal: 30,
+      paddingVertical: 12,
+      borderRadius: 20,
+    },
+    editText: {
+      fontWeight: "500",
+      color: colors.text,
+    },
+  });
+}

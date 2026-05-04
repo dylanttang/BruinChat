@@ -1,15 +1,21 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../context/ThemeContext";
 
 export default function TabLayout() {
+  const { colors } = useTheme();
+
   return (
     <Tabs
-      screenOptions={({ route }) => ({
+      screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#000",
-        tabBarInactiveTintColor: "#888",
-        tabBarShowLabel: true,
-      })}
+        tabBarActiveTintColor: colors.text,
+        tabBarInactiveTintColor: colors.mutedText,
+        tabBarStyle: {
+          backgroundColor: colors.tabBar,
+          borderTopColor: colors.border,
+        },
+      }}
     >
       <Tabs.Screen
         name="home"

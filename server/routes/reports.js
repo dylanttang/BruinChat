@@ -8,27 +8,27 @@ import { devAuth } from '../middleware/devAuth.js';
 const router = Router();
 
 router.post('/', devAuth, async (req, res) => {
-  const { targetType, targetId, reason, details } = req.body;
-
-  if (!['user', 'message'].includes(targetType)) {
-    return res.status(400).json({ error: 'Invalid targetType' });
-  }
-  if (!['spam', 'harassment', 'inappropriate_content', 'hate_speech', 'other'].includes(reason)) {
-    return res.status(400).json({ error: 'Invalid reason' });
-  }
-  if (!mongoose.Types.ObjectId.isValid(targetId)) {
-    return res.status(400).json({ error: 'Invalid targetId' });
-  }
-
-  const TargetModel = targetType === 'user' ? User : Message;
-  const target = await TargetModel.findById(targetId).lean();
-  if (!target) return res.status(404).json({ error: `${targetType} not found` });
-
-  if (targetType === 'user' && targetId === req.user._id.toString()) {
-    return res.status(400).json({ error: 'Cannot report yourself' });
-  }
-
   try {
+    const { targetType, targetId, reason, details } = req.body;
+
+    if (!['user', 'message'].includes(targetType)) {
+      return res.status(400).json({ error: 'Invalid targetType' });
+    }
+    if (!['spam', 'harassment', 'inappropriate_content', 'hate_speech', 'other'].includes(reason)) {
+      return res.status(400).json({ error: 'Invalid reason' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ error: 'Invalid targetId' });
+    }
+
+    const TargetModel = targetType === 'user' ? User : Message;
+    const target = await TargetModel.findById(targetId).lean();
+    if (!target) return res.status(404).json({ error: `${targetType} not found` });
+
+    if (targetType === 'user' && targetId === req.user._id.toString()) {
+      return res.status(400).json({ error: 'Cannot report yourself' });
+    }
+
     const report = await Report.create({
       reporterId: req.user._id,
       targetType,

@@ -129,4 +129,26 @@ router.put('/me/courses', devAuth, async (req, res) => {
   }
 });
 
+// PUT /api/users/me/push-token
+router.put('/me/push-token', devAuth, async (req, res) => {
+  try {
+    const { pushToken } = req.body;
+
+    if (pushToken !== null && typeof pushToken !== 'string') {
+      return res.status(400).json({ error: 'pushToken must be a string or null' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { pushToken: pushToken ?? null },
+      { new: true }
+    ).lean();
+
+    return res.json({ pushToken: user.pushToken });
+  } catch (err) {
+    console.error('PUT /api/users/me/push-token error:', err);
+    return res.status(500).json({ error: 'Failed to update push token' });
+  }
+});
+
 export default router;

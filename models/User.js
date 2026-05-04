@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema(
     // NOTE: for now we seed fake users without auth; later replace this with hashedPassword, etc.
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     bannedAt: { type: Date, default: null },
+    pushToken: { type: String, default: null },
   },
   { timestamps: true }
 );

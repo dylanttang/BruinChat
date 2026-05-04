@@ -7,6 +7,8 @@ const userSchema = new mongoose.Schema(
     avatarUrl: { type: String, default: '' },
     courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
     // NOTE: for now we seed fake users without auth; later replace this with hashedPassword, etc.
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    bannedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

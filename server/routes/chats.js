@@ -140,6 +140,10 @@ router.get('/:id/messages', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/:id/messages', devAuth, async (req, res) => {
   try {
+    if (req.user.bannedAt) {
+      return res.status(403).json({ error: 'Your account has been banned' });
+    }
+
     const chatId = req.params.id;
 
     // Validate chat ID format

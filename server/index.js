@@ -7,6 +7,8 @@ import chatsRoutes from './routes/chats.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import usersRoutes from './routes/users.js';
+import reportsRoutes from './routes/reports.js';
+import adminRoutes from './routes/admin.js';
 
 dotenv.config();
 
@@ -73,6 +75,8 @@ app.get('/api/health', (req, res) => {
 app.use('/api/courses', coursesRoutes);
 app.use('/api/chats', chatsRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;

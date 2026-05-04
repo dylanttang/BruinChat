@@ -2,7 +2,9 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import Chat from '../../models/Chat.js';
 import Message from '../../models/Message.js';
+import User from '../../models/User.js';
 import { devAuth } from '../middleware/devAuth.js';
+import { sendPush } from '../utils/push.js';
 
 const router = Router();
 
@@ -242,6 +244,22 @@ router.post('/:id/messages', devAuth, async (req, res) => {
 
     if (req.io) {
       req.io.to(chatId).emit('newMessage', populated);
+    }
+
+    // Fan out push notifications to members with tokens, excluding sender
+    const recipients = await User.find({
+      _id: { $in: chat.members, $ne: req.user._id },
+      pushToken: { $ne: null },
+    }).select('pushToken').lean();
+
+    if (recipients.length > 0) {
+      const tokens = recipients.map((u) => u.pushToken);
+      const senderName = req.user.displayName || 'Someone';
+      sendPush(tokens, {
+        title: senderName,
+        body: populated.text || '📎 Media',
+        data: { chatId },
+      });
     }
 
     res.status(201).json({ message: populated });

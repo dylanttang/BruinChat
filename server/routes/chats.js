@@ -11,7 +11,7 @@ const router = Router();
 // ---------------------------------------------------------------------------
 router.get('/', devAuth, async (req, res) => {
   try {
-    const chats = await Chat.find({ members: req.user._id })
+    const chats = await Chat.find({ members: req.user._id, archivedBy: { $ne: req.user._id } })
       .sort({ lastMessageAt: -1 })
       .populate('members', '_id displayName avatarUrl')
       .lean();
@@ -34,6 +34,57 @@ router.get('/', devAuth, async (req, res) => {
   } catch (err) {
     console.error('GET /api/chats error:', err);
     res.status(500).json({ error: 'Failed to fetch chats' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/chats/archived — List chats archived by the current user
+// ---------------------------------------------------------------------------
+router.get('/archived', devAuth, async (req, res) => {
+  try {
+    const chats = await Chat.find({
+      members: req.user._id,
+      archivedBy: req.user._id,
+    })
+      .sort({ lastMessageAt: -1 })
+      .populate('members', '_id displayName avatarUrl')
+      .lean();
+
+    return res.json(chats);
+  } catch (err) {
+    console.error('GET /api/chats/archived error:', err);
+    return res.status(500).json({ error: 'Failed to fetch archived chats' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/chats/:id/archive — Toggle archive status for current user
+// Body: { archive: true | false }
+// ---------------------------------------------------------------------------
+router.put('/:id/archive', devAuth, async (req, res) => {
+  try {
+    const { archive } = req.body;
+
+    if (typeof archive !== 'boolean') {
+      return res.status(400).json({ error: 'archive must be a boolean' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid chat ID' });
+    }
+
+    const chat = await Chat.findOne({ _id: req.params.id, members: req.user._id });
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+
+    const update = archive
+      ? { $addToSet: { archivedBy: req.user._id } }
+      : { $pull: { archivedBy: req.user._id } };
+
+    const updated = await Chat.findByIdAndUpdate(req.params.id, update, { new: true }).lean();
+    return res.json(updated);
+  } catch (err) {
+    console.error('PUT /api/chats/:id/archive error:', err);
+    return res.status(500).json({ error: 'Failed to update archive status' });
   }
 });
 

@@ -7,9 +7,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
@@ -33,12 +37,37 @@ type User = {
 
 export default function Profile() {
   const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
   const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const styles = useMemo(() => makeStyles(colors, tabBarHeight), [colors, tabBarHeight]);
 
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [localAvatar, setLocalAvatar] = useState<string | null>(null);
+  const [courseListHeight, setCourseListHeight] = useState(0);
+  const [courseContentHeight, setCourseContentHeight] = useState(0);
+  const [courseScrollY, setCourseScrollY] = useState(0);
+
+  const courseScrollRange = Math.max(courseContentHeight - courseListHeight, 0);
+  const clampedCourseScrollY = Math.max(0, Math.min(courseScrollY, courseScrollRange));
+  const shouldShowCourseScrollbar = !!user?.courses?.length && courseListHeight > 0;
+  const courseScrollbarThumbHeight =
+    courseListHeight > 0 && courseContentHeight > courseListHeight
+      ? Math.min(courseListHeight, Math.max(36, (courseListHeight * courseListHeight) / courseContentHeight))
+      : Math.max(36, courseListHeight);
+  const courseScrollbarThumbTop =
+    courseScrollRange > 0
+      ? (clampedCourseScrollY / courseScrollRange) *
+        Math.max(courseListHeight - courseScrollbarThumbHeight, 0)
+      : 0;
+
+  const onCourseListLayout = (event: LayoutChangeEvent) => {
+    setCourseListHeight(event.nativeEvent.layout.height);
+  };
+
+  const onCourseListScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setCourseScrollY(event.nativeEvent.contentOffset.y);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -108,21 +137,46 @@ export default function Profile() {
             No courses yet. Tap "Edit Courses" below to add some.
           </Text>
         ) : (
-          <FlatList
-            data={user.courses}
-            keyExtractor={(item) => item._id}
-            renderItem={({ item }) => (
-              <View style={styles.courseRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.courseTitle}>
-                    {item.subjectArea} {item.number}
-                  </Text>
-                  <Text style={styles.courseSubtitle}>{item.title}</Text>
+          <View style={styles.courseListWrapper} onLayout={onCourseListLayout}>
+            <FlatList
+              style={styles.courseList}
+              contentContainerStyle={styles.scrollableCourseContent}
+              showsVerticalScrollIndicator
+              persistentScrollbar
+              bounces={false}
+              overScrollMode="never"
+              onContentSizeChange={(_, height) => setCourseContentHeight(height)}
+              onScroll={onCourseListScroll}
+              scrollEventThrottle={16}
+              data={user.courses}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <View style={styles.courseRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.courseTitle}>
+                      {item.subjectArea} {item.number}
+                    </Text>
+                    <Text style={styles.courseSubtitle}>{item.title}</Text>
+                  </View>
                 </View>
-              </View>
+              )}
+            />
+            {shouldShowCourseScrollbar && (
+              <>
+                <View pointerEvents="none" style={styles.scrollIndicatorTrack} />
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.scrollIndicatorThumb,
+                    {
+                      height: courseScrollbarThumbHeight,
+                      transform: [{ translateY: courseScrollbarThumbTop }],
+                    },
+                  ]}
+                />
+              </>
             )}
-            scrollEnabled={false}
-          />
+          </View>
         )}
       </View>
 
@@ -136,11 +190,13 @@ export default function Profile() {
   );
 }
 
-function makeStyles(colors: Colors) {
+function makeStyles(colors: Colors, tabBarHeight: number) {
   return StyleSheet.create({
     container: {
       flex: 1,
-      padding: 20,
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: tabBarHeight + 20,
       backgroundColor: colors.background,
     },
     settingsIcon: {
@@ -151,12 +207,12 @@ function makeStyles(colors: Colors) {
     },
     avatarWrapper: {
       alignSelf: "center",
-      marginTop: 30,
+      marginTop: 4,
     },
     avatar: {
-      width: 160,
-      height: 160,
-      borderRadius: 80,
+      width: 112,
+      height: 112,
+      borderRadius: 56,
       backgroundColor: colors.avatarBg,
     },
     editAvatar: {
@@ -168,18 +224,48 @@ function makeStyles(colors: Colors) {
       borderRadius: 20,
     },
     name: {
-      fontSize: 24,
+      fontSize: 23,
       fontWeight: "600",
       textAlign: "center",
-      marginVertical: 20,
+      marginVertical: 6,
       color: colors.text,
     },
     card: {
+      flex: 1,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
       padding: 16,
       backgroundColor: colors.card,
+    },
+    courseListWrapper: {
+      flex: 1,
+      position: "relative",
+    },
+    courseList: {
+      flex: 1,
+    },
+    scrollableCourseContent: {
+      paddingRight: 14,
+    },
+    scrollIndicatorTrack: {
+      position: "absolute",
+      top: 0,
+      right: 2,
+      bottom: 0,
+      width: 5,
+      borderRadius: 3,
+      backgroundColor: colors.mutedText,
+      opacity: 0.35,
+    },
+    scrollIndicatorThumb: {
+      position: "absolute",
+      top: 0,
+      right: 2,
+      width: 5,
+      height: 42,
+      borderRadius: 3,
+      backgroundColor: colors.mutedText,
     },
     cardTitle: {
       fontWeight: "600",
@@ -203,7 +289,7 @@ function makeStyles(colors: Colors) {
       color: colors.subtext,
     },
     editButton: {
-      marginTop: 25,
+      marginTop: 10,
       alignSelf: "center",
       backgroundColor: colors.inputBg,
       paddingHorizontal: 30,

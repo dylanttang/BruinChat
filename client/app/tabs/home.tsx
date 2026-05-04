@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useTheme, Colors } from "../context/ThemeContext";
@@ -77,7 +78,14 @@ export default function Home() {
       <View style={styles.header}>
         <View style={styles.iconPlaceholder} />
         <Text style={styles.title}>BruinChat</Text>
-        <View style={styles.iconPlaceholder} />
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => router.push("/tabs/profile")}
+          accessibilityRole="button"
+          accessibilityLabel="Open profile settings"
+        >
+          <Ionicons name="person-circle-outline" size={30} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -146,6 +154,13 @@ function makeStyles(colors: Colors) {
       height: 32,
       backgroundColor: colors.avatarBg,
       borderRadius: 4,
+    },
+    profileButton: {
+      width: 32,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 16,
     },
     list: {
       paddingTop: 8,

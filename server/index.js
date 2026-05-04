@@ -4,15 +4,55 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import coursesRoutes from './routes/courses.js';
 import chatsRoutes from './routes/chats.js';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+  }
+});
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Attach io to req
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
+// Socket.io connection handling
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+  
+  // Basic handshake authentication
+  const userId = socket.handshake.auth.userId;
+  if (userId) {
+    socket.userId = userId;
+  }
+
+  socket.on('joinChat', (chatId) => {
+    socket.join(chatId);
+    console.log(`Socket ${socket.id} joined chat ${chatId}`);
+  });
+
+  socket.on('leaveChat', (chatId) => {
+    socket.leave(chatId);
+    console.log(`Socket ${socket.id} left chat ${chatId}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
 
 // Test route
 app.get('/', (req, res) => {
@@ -49,7 +89,7 @@ mongoose.connect(MONGODB_URI, {
     process.exit(1);
   });
 
-app.listen(PORT, '0.0.0.0', () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`);
   if (process.env.SERVER_PUBLIC_URL) {
     console.log(`For mobile devices, use: ${process.env.SERVER_PUBLIC_URL}`);

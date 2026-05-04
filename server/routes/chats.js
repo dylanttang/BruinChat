@@ -136,10 +136,139 @@ router.post('/:id/messages', devAuth, async (req, res) => {
       .populate('senderId', '_id displayName avatarUrl')
       .lean();
 
+    if (req.io) {
+      req.io.to(chatId).emit('newMessage', populated);
+    }
+
     res.status(201).json({ message: populated });
   } catch (err) {
     console.error('POST /api/chats/:id/messages error:', err);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/chats/:id/members/me — Leave a chat
+// ---------------------------------------------------------------------------
+router.delete('/:id/members/me', devAuth, async (req, res) => {
+  try {
+    const chatId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+      return res.status(400).json({ error: 'Invalid chat ID' });
+    }
+
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    const userIdStr = req.user._id.toString();
+    const isMember = chat.members.some((memberId) => memberId.toString() === userIdStr);
+
+    if (!isMember) {
+      return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
+    // Remove user
+    chat.members = chat.members.filter((memberId) => memberId.toString() !== userIdStr);
+    
+    // If chat is course-linked (!isGroup) and empty, delete it
+    if (!chat.isGroup && chat.members.length === 0) {
+      await Chat.findByIdAndDelete(chatId);
+      await Message.deleteMany({ chatId });
+      return res.json({ message: 'Left chat and deleted empty course chat' });
+    } else {
+      await chat.save();
+      return res.json({ message: 'Successfully left chat' });
+    }
+  } catch (err) {
+    console.error('DELETE /api/chats/:id/members/me error:', err);
+    res.status(500).json({ error: 'Failed to leave chat' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/chats/:chatId/messages/:id — Edit a message
+// ---------------------------------------------------------------------------
+router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
+  try {
+    const { chatId, id: messageId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(chatId) || !mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({ error: 'Invalid ID' });
+    }
+
+    const message = await Message.findOne({ _id: messageId, chatId });
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    if (message.senderId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Only the sender can edit this message' });
+    }
+
+    const { text } = req.body;
+    if (text === undefined || !text.trim()) {
+      return res.status(400).json({ error: 'Message text cannot be empty' });
+    }
+
+    message.text = text.trim();
+    message.editedAt = new Date();
+    await message.save();
+
+    const populated = await Message.findById(message._id)
+      .populate('senderId', '_id displayName avatarUrl')
+      .lean();
+
+    if (req.io) {
+      req.io.to(chatId).emit('messageEdited', populated);
+    }
+
+    res.json({ message: populated });
+  } catch (err) {
+    console.error('PUT /api/chats/:chatId/messages/:id error:', err);
+    res.status(500).json({ error: 'Failed to edit message' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/chats/:chatId/messages/:id — Delete a message
+// ---------------------------------------------------------------------------
+router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
+  try {
+    const { chatId, id: messageId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(chatId) || !mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({ error: 'Invalid ID' });
+    }
+
+    const message = await Message.findOne({ _id: messageId, chatId });
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    if (message.senderId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Only the sender can delete this message' });
+    }
+
+    message.text = '';
+    message.mediaUrl = '';
+    message.deletedAt = new Date();
+    await message.save();
+
+    const populated = await Message.findById(message._id)
+      .populate('senderId', '_id displayName avatarUrl')
+      .lean();
+
+    if (req.io) {
+      req.io.to(chatId).emit('messageDeleted', populated);
+    }
+
+    res.json({ message: populated });
+  } catch (err) {
+    console.error('DELETE /api/chats/:chatId/messages/:id error:', err);
+    res.status(500).json({ error: 'Failed to delete message' });
   }
 });
 

@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import usersRoutes from './routes/users.js';
 import reportsRoutes from './routes/reports.js';
 import adminRoutes from './routes/admin.js';
+import uploadRoutes from './routes/upload.js';
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ app.use('/api/chats', chatsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;

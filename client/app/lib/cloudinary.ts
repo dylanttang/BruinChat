@@ -1,4 +1,3 @@
-import * as FileSystem from 'expo-file-system';
 import { apiFetch } from './api';
 
 type UploadFolder = 'avatars' | 'messages';
@@ -17,8 +16,9 @@ export async function uploadToCloudinary(
   uri: string,
   folder: UploadFolder
 ): Promise<string> {
-  const fileInfo = await FileSystem.getInfoAsync(uri, { size: true });
-  if (fileInfo.exists && fileInfo.size && fileInfo.size > MAX_FILE_SIZE) {
+  const fileRes = await fetch(uri);
+  const blob = await fileRes.blob();
+  if (blob.size > MAX_FILE_SIZE) {
     throw new Error('Image too large (max 5MB)');
   }
 

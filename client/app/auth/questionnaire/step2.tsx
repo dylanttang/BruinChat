@@ -65,7 +65,16 @@ export default function Step2() {
         <TouchableOpacity
           style={[styles.button, !selectedGoal && styles.buttonDisabled]}
           disabled={!selectedGoal}
-          onPress={() => router.push("/auth/questionnaire/step3")}
+          onPress={() =>
+            router.push({
+              pathname: "/auth/questionnaire/step3",
+              params: {
+                year: params.year ?? "",
+                major: major.trim(),
+                goal: selectedGoal ?? "",
+              },
+            })
+          }
         >
           <Text style={styles.buttonText}>Continue to Courses</Text>
         </TouchableOpacity>

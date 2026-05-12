@@ -11,6 +11,7 @@ import reportsRoutes from './routes/reports.js';
 import adminRoutes from './routes/admin.js';
 import uploadRoutes from './routes/upload.js';
 import feedbackRoutes from './routes/feedback.js';
+import authRoutes from './routes/auth.js';
 
 dotenv.config();
 
@@ -91,6 +92,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/auth', authRoutes);
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;

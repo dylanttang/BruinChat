@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     bannedAt: { type: Date, default: null },
     pushToken: { type: String, default: null },
+    year: { type: String, default: null },
+    major: { type: String, default: null },
+    goal: { type: String, default: null },
   },
   { timestamps: true }
 );

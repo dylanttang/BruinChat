@@ -8,17 +8,22 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
 import { apiFetch, getDevUserId } from "../lib/api";
+import { uploadToCloudinary } from "../lib/cloudinary";
 import { useTheme, Colors } from "../context/ThemeContext";
 
 type Message = {
   _id: string;
   text: string;
+  mediaUrl?: string | null;
   createdAt: string;
   senderId: { _id: string; displayName: string; avatarUrl: string };
   replyTo?: { _id: string; text: string; senderId: { displayName: string } } | null;
@@ -93,6 +98,7 @@ export default function ChatScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
   const loadData = useCallback(async () => {
@@ -141,6 +147,38 @@ export default function ChatScreen() {
       console.error("Failed to send:", err);
     } finally {
       setSending(false);
+    }
+  };
+
+  const pickAndSendImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission required", "Please allow photo access to send images.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const uri = result.assets[0].uri;
+    setUploadingMedia(true);
+    try {
+      const mediaUrl = await uploadToCloudinary(uri, "messages");
+      const res = await apiFetch(`/api/chats/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ text: "", mediaUrl }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setMessages((prev) => [data.message, ...prev]);
+    } catch (err: any) {
+      Alert.alert("Upload failed", err.message ?? "Could not send image. Try again.");
+    } finally {
+      setUploadingMedia(false);
     }
   };
 
@@ -194,6 +232,7 @@ export default function ChatScreen() {
                   id: msg._id,
                   user: msg.senderId.displayName,
                   text: msg.text,
+                  mediaUrl: msg.mediaUrl ?? null,
                   time: formatTime(msg.createdAt),
                   mine: currentUserId === msg.senderId._id,
                   replyTo: msg.replyTo ?? null,
@@ -219,8 +258,11 @@ export default function ChatScreen() {
           </View>
         )}
         <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.plusBtn}>
-            <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
+          <TouchableOpacity style={styles.plusBtn} onPress={pickAndSendImage} disabled={uploadingMedia || sending}>
+            {uploadingMedia
+              ? <ActivityIndicator size="small" color={colors.mutedText} />
+              : <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
+            }
           </TouchableOpacity>
 
           <TextInput

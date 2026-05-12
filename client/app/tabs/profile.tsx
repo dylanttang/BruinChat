@@ -33,6 +33,9 @@ type User = {
   username: string;
   courses: Course[];
   avatarUrl?: string;
+  year?: string;
+  major?: string;
+  goal?: string;
 };
 
 export default function Profile() {
@@ -125,6 +128,19 @@ export default function Profile() {
       <Text style={styles.name}>
         {loading ? " " : user?.displayName ?? "Unknown User"}
       </Text>
+
+      {/* Profile info */}
+      {!loading && (user?.year || user?.major) && (
+        <View style={styles.profileInfo}>
+          {user.year && user.major ? (
+            <Text style={styles.profileInfoText}>{user.year} · {user.major}</Text>
+          ) : user.year ? (
+            <Text style={styles.profileInfoText}>{user.year}</Text>
+          ) : (
+            <Text style={styles.profileInfoText}>{user.major}</Text>
+          )}
+        </View>
+      )}
 
       {/* Courses Card */}
       <View style={styles.card}>
@@ -229,6 +245,20 @@ function makeStyles(colors: Colors, tabBarHeight: number) {
       textAlign: "center",
       marginVertical: 6,
       color: colors.text,
+    },
+    profileInfo: {
+      alignItems: "center",
+      marginBottom: 12,
+    },
+    profileInfoText: {
+      fontSize: 14,
+      color: colors.subtext,
+      fontWeight: "500",
+    },
+    profileGoalText: {
+      fontSize: 13,
+      color: colors.mutedText,
+      marginTop: 2,
     },
     card: {
       flex: 1,

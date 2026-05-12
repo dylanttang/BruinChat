@@ -151,4 +151,26 @@ router.put('/me/push-token', devAuth, async (req, res) => {
   }
 });
 
+// PUT /api/users/me/avatar
+router.put('/me/avatar', devAuth, async (req, res) => {
+  try {
+    const { avatarUrl } = req.body;
+
+    if (typeof avatarUrl !== 'string' || !avatarUrl.startsWith('https://res.cloudinary.com/')) {
+      return res.status(400).json({ error: 'avatarUrl must be a Cloudinary URL' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { avatarUrl },
+      { new: true }
+    ).lean();
+
+    return res.json({ avatarUrl: user.avatarUrl });
+  } catch (err) {
+    console.error('PUT /api/users/me/avatar error:', err);
+    return res.status(500).json({ error: 'Failed to update avatar' });
+  }
+});
+
 export default router;

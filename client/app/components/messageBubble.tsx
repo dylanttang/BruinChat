@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { useMemo } from "react";
 import { useTheme, Colors } from "../context/ThemeContext";
 
@@ -7,6 +7,7 @@ type Props = {
     id: string;
     user: string;
     text: string;
+    mediaUrl?: string | null;
     time: string;
     mine: boolean;
     replyTo?: { _id: string; text: string; senderId: { displayName: string } } | null;
@@ -37,9 +38,18 @@ export default function MessageBubble({ item, onLongPress }: Props) {
               <Text style={styles.replyText} numberOfLines={1}>{item.replyTo.text}</Text>
             </View>
           )}
-          <Text style={{ color: isMe ? "white" : colors.text, fontSize: 16 }}>
-            {item.text}
-          </Text>
+          {!!item.mediaUrl && (
+            <Image
+              source={{ uri: item.mediaUrl }}
+              style={{ width: 200, height: 200, borderRadius: 12, marginBottom: item.text ? 6 : 0 }}
+              resizeMode="cover"
+            />
+          )}
+          {!!item.text && (
+            <Text style={{ color: isMe ? "white" : colors.text, fontSize: 16 }}>
+              {item.text}
+            </Text>
+          )}
         </View>
 
         <Text style={[styles.time, { alignSelf: isMe ? "flex-end" : "flex-start" }]}>

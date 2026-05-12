@@ -18,6 +18,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { apiFetch } from "../lib/api";
+import { uploadToCloudinary } from "../lib/cloudinary";
 import { useTheme, Colors } from "../context/ThemeContext";
 
 type Course = {
@@ -46,7 +47,7 @@ export default function Profile() {
 
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [localAvatar, setLocalAvatar] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [courseListHeight, setCourseListHeight] = useState(0);
   const [courseContentHeight, setCourseContentHeight] = useState(0);
   const [courseScrollY, setCourseScrollY] = useState(0);
@@ -100,26 +101,39 @@ export default function Profile() {
     if (result.canceled) return;
 
     const uri = result.assets[0].uri;
-    setLocalAvatar(uri);
-
-    // TODO: Upload to backend once Jonathan's endpoint is ready.
-    // Example:
-    // const formData = new FormData();
-    // formData.append("avatar", { uri, name: "avatar.jpg", type: "image/jpeg" } as any);
-    // await apiFetch("/api/users/me/avatar", { method: "POST", body: formData });
+    setUploadingAvatar(true);
+    try {
+      const avatarUrl = await uploadToCloudinary(uri, "avatars");
+      const res = await apiFetch("/api/users/me/avatar", {
+        method: "PUT",
+        body: JSON.stringify({ avatarUrl }),
+      });
+      if (!res.ok) throw new Error("Failed to save avatar");
+      setUser((prev) => (prev ? { ...prev, avatarUrl } : prev));
+    } catch (err: any) {
+      Alert.alert("Upload failed", err.message ?? "Could not update avatar. Try again.");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
-  const avatarSource = localAvatar ?? user?.avatarUrl ?? null;
+  const avatarSource = user?.avatarUrl ?? null;
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Avatar */}
       <View style={styles.avatarWrapper}>
-        <Image
-          source={avatarSource ? { uri: avatarSource } : undefined}
-          style={styles.avatar}
-        />
-        <TouchableOpacity style={styles.editAvatar} onPress={pickAvatar}>
+        {uploadingAvatar ? (
+          <View style={[styles.avatar, { alignItems: "center", justifyContent: "center", backgroundColor: colors.inputBg }]}>
+            <ActivityIndicator color={colors.mutedText} />
+          </View>
+        ) : (
+          <Image
+            source={avatarSource ? { uri: avatarSource } : undefined}
+            style={styles.avatar}
+          />
+        )}
+        <TouchableOpacity style={styles.editAvatar} onPress={pickAvatar} disabled={uploadingAvatar}>
           <Ionicons name="pencil" size={16} color="white" />
         </TouchableOpacity>
       </View>

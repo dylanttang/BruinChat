@@ -59,14 +59,22 @@ export default function Settings() {
         {/* Report */}
         <Text style={styles.section}>Report</Text>
         <View style={styles.card}>
-          <View style={styles.row}>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => router.push("/report")}
+            activeOpacity={0.7}
+          >
             <Text style={styles.rowText}>Report a user</Text>
             <Text style={styles.chevron}>›</Text>
-          </View>
-          <View style={[styles.row, styles.lastRow]}>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.row, styles.lastRow]}
+            onPress={() => router.push("/report/past")}
+            activeOpacity={0.7}
+          >
             <Text style={styles.rowText}>Past reports</Text>
             <Text style={styles.chevron}>›</Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Archive */}

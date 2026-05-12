@@ -1,6 +1,9 @@
+import * as FileSystem from 'expo-file-system';
 import { apiFetch } from './api';
 
 type UploadFolder = 'avatars' | 'messages';
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 type SignatureResponse = {
   signature: string;
@@ -14,6 +17,11 @@ export async function uploadToCloudinary(
   uri: string,
   folder: UploadFolder
 ): Promise<string> {
+  const fileInfo = await FileSystem.getInfoAsync(uri, { size: true });
+  if (fileInfo.exists && fileInfo.size && fileInfo.size > MAX_FILE_SIZE) {
+    throw new Error('Image too large (max 5MB)');
+  }
+
   const sigRes = await apiFetch(`/api/upload/signature?folder=${folder}`);
   if (!sigRes.ok) {
     throw new Error('Failed to get upload signature');

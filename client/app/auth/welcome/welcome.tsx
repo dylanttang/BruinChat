@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -12,8 +12,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { apiFetch, setDevUserId } from "../../lib/api";
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
+import { apiFetch, setDevUserId, signInWithGoogleIdToken } from "../../lib/api";
 import { useTheme, Colors } from "../../context/ThemeContext";
+
+WebBrowser.maybeCompleteAuthSession();
 
 type DevUser = {
   _id: string;
@@ -27,12 +31,57 @@ export default function Welcome() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
   const [devPickerVisible, setDevPickerVisible] = useState(false);
   const [devUsers, setDevUsers] = useState<DevUser[] | null>(null);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const isGoogleConfigured = Boolean(
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+      process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ||
+      process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+  );
+  const fallbackClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ||
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
+    "missing-google-client-id";
+
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: fallbackClientId,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    loginHint: email || undefined,
+    selectAccount: true,
+  });
+
+  useEffect(() => {
+    const finishGoogleSignIn = async () => {
+      if (response?.type !== "success") return;
+
+      const idToken = response.params.id_token;
+      if (!idToken) {
+        setAuthError("Google did not return an ID token. Check your OAuth client IDs.");
+        setSigningIn(false);
+        return;
+      }
+
+      try {
+        await signInWithGoogleIdToken(idToken);
+        router.replace("/auth/questionnaire/step1");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Google sign-in failed";
+        setAuthError(message);
+      } finally {
+        setSigningIn(false);
+      }
+    };
+
+    finishGoogleSignIn();
+  }, [response, router]);
 
   const openDevPicker = async () => {
     setDevPickerVisible(true);
@@ -58,6 +107,20 @@ export default function Welcome() {
     router.replace("/auth/questionnaire/step1");
   };
 
+  const signInWithGoogle = async () => {
+    setAuthError(null);
+    if (!isGoogleConfigured) {
+      setAuthError("Google OAuth client IDs are not configured yet.");
+      return;
+    }
+
+    setSigningIn(true);
+    const result = await promptAsync();
+    if (result.type !== "success") {
+      setSigningIn(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Sign in with your{"\n"}UCLA email</Text>
@@ -69,15 +132,8 @@ export default function Welcome() {
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="Your UCLA Logon Password"
-        placeholderTextColor={colors.mutedText}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
+        autoComplete="email"
+        keyboardType="email-address"
       />
 
       <View style={styles.row}>
@@ -87,21 +143,27 @@ export default function Welcome() {
           </View>
           <Text style={styles.rowText}>Remember me</Text>
         </TouchableOpacity>
-        <TouchableOpacity>
-          <Text style={styles.rowText}>Forgot Password?</Text>
-        </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.signInBtn}>
-        <Text style={styles.signInText}>Sign In</Text>
+      {authError && <Text style={styles.errorText}>{authError}</Text>}
+
+      <TouchableOpacity
+        style={[styles.signInBtn, (!request || signingIn || !isGoogleConfigured) && styles.signInBtnDisabled]}
+        onPress={signInWithGoogle}
+        disabled={!request || signingIn}
+      >
+        {signingIn ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.signInText}>Sign in with Google</Text>
+        )}
       </TouchableOpacity>
 
-      {/* TODO: Remove once Google OAuth is working */}
+      {/* TODO: Remove once every environment has Google OAuth client IDs. */}
       <TouchableOpacity style={styles.devBtn} onPress={openDevPicker}>
         <Text style={styles.devText}>Skip (Dev)</Text>
       </TouchableOpacity>
 
-      {/* Dev user picker */}
       <Modal
         transparent
         visible={devPickerVisible}
@@ -112,7 +174,7 @@ export default function Welcome() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Pick a dev user</Text>
             <Text style={styles.modalSubtitle}>
-              Temporary — for testing until Google OAuth is wired up.
+              Temporary - for testing until every OAuth client is configured.
             </Text>
 
             {loadingUsers ? (
@@ -179,7 +241,7 @@ function makeStyles(colors: Colors) {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 24,
+      marginBottom: 16,
     },
     rememberRow: {
       flexDirection: "row",
@@ -206,13 +268,23 @@ function makeStyles(colors: Colors) {
       fontSize: 14,
       color: colors.text,
     },
+    errorText: {
+      color: "#B42318",
+      fontSize: 13,
+      textAlign: "center",
+      marginBottom: 12,
+    },
     signInBtn: {
-      backgroundColor: "#888",
+      backgroundColor: "#4285F4",
       borderRadius: 25,
       paddingVertical: 14,
       alignItems: "center",
       alignSelf: "center",
-      paddingHorizontal: 48,
+      minWidth: 210,
+      paddingHorizontal: 28,
+    },
+    signInBtnDisabled: {
+      opacity: 0.6,
     },
     signInText: {
       color: "#fff",

@@ -55,4 +55,36 @@ router.patch('/reports/:id', adminAuth, async (req, res) => {
   }
 });
 
+// POST /api/admin/users/:id/ban
+router.post('/users/:id/ban', adminAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.bannedAt) return res.status(409).json({ error: 'User already banned' });
+
+    user.bannedAt = new Date();
+    await user.save();
+
+    return res.json({ userId: user._id, bannedAt: user.bannedAt });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/admin/users/:id/unban
+router.post('/users/:id/unban', adminAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.bannedAt) return res.status(409).json({ error: 'User is not banned' });
+
+    user.bannedAt = null;
+    await user.save();
+
+    return res.json({ userId: user._id, bannedAt: null });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

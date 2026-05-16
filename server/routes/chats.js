@@ -247,19 +247,33 @@ router.post('/:id/messages', devAuth, async (req, res) => {
     }
 
     // Fan out push notifications to members with tokens, excluding sender
+    // Respect per-user notification preferences
     const recipients = await User.find({
       _id: { $in: chat.members, $ne: req.user._id },
       pushToken: { $ne: null },
-    }).select('pushToken').lean();
+      notifEnabled: true,
+    }).select('pushToken classNotif replyNotif _id').lean();
 
     if (recipients.length > 0) {
-      const tokens = recipients.map((u) => u.pushToken);
-      const senderName = req.user.displayName || 'Someone';
-      sendPush(tokens, {
-        title: senderName,
-        body: populated.text || '📎 Media',
-        data: { chatId },
-      });
+      const isReply = !!populated.replyTo;
+      const isClassChat = !!chat.course;
+
+      const eligibleTokens = recipients
+        .filter((u) => {
+          if (isReply && u.replyNotif === false) return false;
+          if (isClassChat && u.classNotif === false) return false;
+          return true;
+        })
+        .map((u) => u.pushToken);
+
+      if (eligibleTokens.length > 0) {
+        const senderName = req.user.displayName || 'Someone';
+        sendPush(eligibleTokens, {
+          title: senderName,
+          body: populated.text || '📎 Media',
+          data: { chatId },
+        });
+      }
     }
 
     res.status(201).json({ message: populated });

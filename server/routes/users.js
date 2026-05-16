@@ -129,6 +129,31 @@ router.put('/me/courses', devAuth, async (req, res) => {
   }
 });
 
+// PUT /api/users/me/notifications
+router.put('/me/notifications', devAuth, async (req, res) => {
+  try {
+    const { notifEnabled, classNotif, replyNotif } = req.body;
+
+    const update = {};
+    if (typeof notifEnabled === 'boolean') update.notifEnabled = notifEnabled;
+    if (typeof classNotif === 'boolean') update.classNotif = classNotif;
+    if (typeof replyNotif === 'boolean') update.replyNotif = replyNotif;
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided' });
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+      .select('notifEnabled classNotif replyNotif')
+      .lean();
+
+    return res.json(user);
+  } catch (err) {
+    console.error('PUT /api/users/me/notifications error:', err);
+    return res.status(500).json({ error: 'Failed to update notification preferences' });
+  }
+});
+
 // PUT /api/users/me/profile — Save year, major, goal
 router.put('/me/profile', devAuth, async (req, res) => {
   try {

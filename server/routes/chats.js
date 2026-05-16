@@ -260,10 +260,8 @@ router.post('/:id/messages', devAuth, async (req, res) => {
 
       const eligibleTokens = recipients
         .filter((u) => {
-          if (isReply && u._id.toString() === populated.replyTo?.senderId?._id?.toString()) {
-            return u.replyNotif !== false;
-          }
-          if (isClassChat) return u.classNotif !== false;
+          if (isReply && u.replyNotif === false) return false;
+          if (isClassChat && u.classNotif === false) return false;
           return true;
         })
         .map((u) => u.pushToken);

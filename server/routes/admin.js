@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import Report from '../../models/Report.js';
 import User from '../../models/User.js';
 import { adminAuth } from '../middleware/adminAuth.js';
@@ -58,6 +59,9 @@ router.patch('/reports/:id', adminAuth, async (req, res) => {
 // POST /api/admin/users/:id/ban
 router.post('/users/:id/ban', adminAuth, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.bannedAt) return res.status(409).json({ error: 'User already banned' });
@@ -74,6 +78,9 @@ router.post('/users/:id/ban', adminAuth, async (req, res) => {
 // POST /api/admin/users/:id/unban
 router.post('/users/:id/unban', adminAuth, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (!user.bannedAt) return res.status(409).json({ error: 'User is not banned' });

@@ -154,6 +154,25 @@ router.put('/me/notifications', devAuth, async (req, res) => {
   }
 });
 
+// PUT /api/users/me/profile — Save year, major, goal
+router.put('/me/profile', devAuth, async (req, res) => {
+  try {
+    const { year, major, goal } = req.body;
+    const update = {};
+    if (year !== undefined) update.year = year;
+    if (major !== undefined) update.major = major;
+    if (goal !== undefined) update.goal = goal;
+
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+      .populate('courses')
+      .lean();
+    res.json({ user });
+  } catch (err) {
+    console.error('PUT /api/users/me/profile error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
 // PUT /api/users/me/push-token
 router.put('/me/push-token', devAuth, async (req, res) => {
   try {

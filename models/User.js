@@ -13,6 +13,9 @@ const userSchema = new mongoose.Schema(
     notifEnabled: { type: Boolean, default: true },
     classNotif: { type: Boolean, default: true },
     replyNotif: { type: Boolean, default: true },
+    year: { type: String, default: null },
+    major: { type: String, default: null },
+    goal: { type: String, default: null },
   },
   { timestamps: true }
 );

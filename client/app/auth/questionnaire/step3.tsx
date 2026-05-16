@@ -61,8 +61,8 @@ export default function AddCoursesScreen() {
         if (userData?.user?.courses) {
           setSelectedCourses(userData.user.courses);
         }
-        // If user already completed the questionnaire, skip straight to home
-        if (userData?.user?.year) {
+        // During onboarding only: skip if they already finished before reaching this step
+        if (userData?.user?.year && params.year) {
           router.replace("/tabs/home");
         }
       })

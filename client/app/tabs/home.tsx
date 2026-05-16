@@ -93,10 +93,18 @@ export default function Home() {
           <ActivityIndicator size="large" color={colors.mutedText} />
         </View>
       ) : chats.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }}>
-          <Text style={{ fontSize: 16, color: colors.subtext, textAlign: "center" }}>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>
             No chats yet. Add classes to get started.
           </Text>
+          <TouchableOpacity
+            style={styles.emptyButton}
+            onPress={() => router.push("/auth/questionnaire/step3")}
+            accessibilityRole="button"
+            accessibilityLabel="Add classes"
+          >
+            <Text style={styles.emptyButtonText}>Add Classes</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -196,6 +204,29 @@ function makeStyles(colors: Colors) {
     time: {
       fontSize: 12,
       color: colors.mutedText,
+    },
+    emptyState: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 32,
+    },
+    emptyText: {
+      fontSize: 16,
+      color: colors.subtext,
+      textAlign: "center",
+    },
+    emptyButton: {
+      marginTop: 20,
+      backgroundColor: colors.inputBg,
+      paddingHorizontal: 30,
+      paddingVertical: 12,
+      borderRadius: 20,
+    },
+    emptyButtonText: {
+      fontSize: 16,
+      fontWeight: "500",
+      color: colors.text,
     },
   });
 }

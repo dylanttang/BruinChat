@@ -7,6 +7,20 @@ import { devAuth } from '../middleware/devAuth.js';
 
 const router = Router();
 
+// GET /api/reports/me — current user's submitted reports
+router.get('/me', devAuth, async (req, res) => {
+  try {
+    const reports = await Report.find({ reporterId: req.user._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json(reports);
+  } catch (err) {
+    console.error('GET /api/reports/me error:', err);
+    return res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
 router.post('/', devAuth, async (req, res) => {
   try {
     const { targetType, targetId, reason, details } = req.body;

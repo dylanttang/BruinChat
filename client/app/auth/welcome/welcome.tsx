@@ -207,7 +207,7 @@ function makeStyles(colors: Colors) {
       color: colors.text,
     },
     signInBtn: {
-      backgroundColor: "#888",
+      backgroundColor: colors.primary,
       borderRadius: 25,
       paddingVertical: 14,
       alignItems: "center",

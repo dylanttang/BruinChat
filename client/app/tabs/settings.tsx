@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, Modal, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, ThemeMode, Colors } from "../context/ThemeContext";
-import { clearDevUserId } from "../lib/api";
+import { clearDevUserId, apiFetch } from "../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
 
@@ -22,6 +22,9 @@ export default function Settings() {
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [classNotif, setClassNotif] = useState(true);
   const [replyNotif, setReplyNotif] = useState(true);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
   // Load persisted notif prefs
   useEffect(() => {
@@ -39,9 +42,8 @@ export default function Settings() {
   const saveNotifPrefs = (prefs: { notifEnabled?: boolean; classNotif?: boolean; replyNotif?: boolean }) => {
     const next = { notifEnabled, classNotif, replyNotif, ...prefs };
     AsyncStorage.setItem(NOTIF_KEY, JSON.stringify(next));
-
-    // TODO: Sync to backend once Jonathan's push notification endpoint is ready.
-    // await apiFetch("/api/users/me/notifications", { method: "PUT", body: JSON.stringify(next) });
+    apiFetch("/api/users/me/notifications", { method: "PUT", body: JSON.stringify(next) })
+      .catch((err) => console.error("Failed to sync notif prefs:", err));
   };
 
   const handleNotifEnabled = (val: boolean) => {
@@ -57,6 +59,25 @@ export default function Settings() {
   const handleReplyNotif = (val: boolean) => {
     setReplyNotif(val);
     saveNotifPrefs({ replyNotif: val });
+  };
+
+  const submitFeedback = async () => {
+    if (!feedbackText.trim()) return;
+    setSubmittingFeedback(true);
+    try {
+      const res = await apiFetch("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({ text: feedbackText.trim() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setFeedbackText("");
+      setFeedbackVisible(false);
+      Alert.alert("Thanks!", "Your feedback was submitted.");
+    } catch (err: any) {
+      Alert.alert("Error", "Could not submit feedback. Try again.");
+    } finally {
+      setSubmittingFeedback(false);
+    }
   };
 
   const signOut = () => {
@@ -141,10 +162,49 @@ export default function Settings() {
           </TouchableOpacity>
         </View>
 
+        {/* Feedback */}
+        <Text style={styles.section}>Support</Text>
+        <View style={styles.card}>
+          <TouchableOpacity style={[styles.row, styles.lastRow]} onPress={() => setFeedbackVisible(true)}>
+            <Text style={styles.rowText}>Send feedback</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity style={styles.signOut} onPress={signOut}>
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Feedback Modal */}
+      <Modal visible={feedbackVisible} transparent animationType="fade" onRequestClose={() => setFeedbackVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Send Feedback</Text>
+            <TextInput
+              style={styles.feedbackInput}
+              placeholder="What's on your mind?"
+              placeholderTextColor={colors.mutedText}
+              multiline
+              value={feedbackText}
+              onChangeText={setFeedbackText}
+              maxLength={500}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => { setFeedbackVisible(false); setFeedbackText(""); }}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSubmit, (!feedbackText.trim() || submittingFeedback) && { opacity: 0.5 }]}
+                onPress={submitFeedback}
+                disabled={!feedbackText.trim() || submittingFeedback}
+              >
+                <Text style={styles.modalSubmitText}>{submittingFeedback ? "Sending…" : "Submit"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -220,6 +280,62 @@ function makeStyles(colors: Colors) {
       fontSize: 12,
       color: colors.mutedText,
       marginTop: 2,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 24,
+    },
+    modalCard: {
+      width: "100%",
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 20,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.text,
+      marginBottom: 14,
+    },
+    feedbackInput: {
+      backgroundColor: colors.inputBg,
+      borderRadius: 10,
+      padding: 12,
+      color: colors.text,
+      fontSize: 15,
+      minHeight: 120,
+      textAlignVertical: "top",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    modalButtons: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: 10,
+      marginTop: 14,
+    },
+    modalCancel: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: colors.inputBg,
+    },
+    modalCancelText: {
+      color: colors.text,
+      fontWeight: "500",
+    },
+    modalSubmit: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+    },
+    modalSubmitText: {
+      color: "#fff",
+      fontWeight: "600",
     },
   });
 }

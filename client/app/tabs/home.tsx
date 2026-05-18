@@ -14,6 +14,8 @@ import { useCallback, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useTheme, Colors } from "../context/ThemeContext";
 
+const CHAT_PAGE_SIZE = 20;
+
 type Chat = {
   _id: string;
   name: string;
@@ -47,13 +49,30 @@ export default function Home() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
-  const loadChats = useCallback(async () => {
+  const loadChats = useCallback(async (
+    { reset = true, before = null }: { reset?: boolean; before?: string | null } = {}
+  ) => {
     try {
-      const res = await apiFetch("/api/chats");
+      const cursor = reset ? null : before;
+      const query = cursor
+        ? `?before=${encodeURIComponent(cursor)}&limit=${CHAT_PAGE_SIZE}`
+        : `?limit=${CHAT_PAGE_SIZE}`;
+      const res = await apiFetch(`/api/chats${query}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setChats(data.chats);
+      setChats((prev) => {
+        if (reset) return data.chats;
+
+        const existingIds = new Set(prev.map((chat) => chat._id));
+        const newChats = data.chats.filter((chat: Chat) => !existingIds.has(chat._id));
+        return [...prev, ...newChats];
+      });
+      setHasMore(!!data.hasMore);
+      setNextCursor(data.nextCursor ?? null);
     } catch (err) {
       console.error("Failed to fetch chats:", err);
     }
@@ -68,8 +87,16 @@ export default function Home() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadChats();
+    await loadChats({ reset: true });
     setRefreshing(false);
+  };
+
+  const loadMoreChats = async () => {
+    if (!hasMore || !nextCursor || loadingMore || loading || refreshing) return;
+
+    setLoadingMore(true);
+    await loadChats({ reset: false, before: nextCursor });
+    setLoadingMore(false);
   };
 
   return (
@@ -113,6 +140,15 @@ export default function Home() {
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.mutedText} />
+          }
+          onEndReached={loadMoreChats}
+          onEndReachedThreshold={0.35}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={colors.mutedText} />
+              </View>
+            ) : null
           }
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -172,6 +208,10 @@ function makeStyles(colors: Colors) {
     },
     list: {
       paddingTop: 8,
+    },
+    footerLoader: {
+      paddingVertical: 16,
+      alignItems: "center",
     },
     chatRow: {
       flexDirection: "row",

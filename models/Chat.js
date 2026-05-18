@@ -14,7 +14,7 @@ const chatSchema = new mongoose.Schema(
 );
 
 chatSchema.index({ members: 1 });
-chatSchema.index({ lastMessageAt: -1 });
+chatSchema.index({ lastMessageAt: -1, _id: -1 });
 // Partial unique index: enforces one chat per course, but allows chats
 // without a course field (e.g. direct messages, team group chats)
 chatSchema.index(
@@ -23,4 +23,3 @@ chatSchema.index(
 );
 
 module.exports = mongoose.model('Chat', chatSchema);
-

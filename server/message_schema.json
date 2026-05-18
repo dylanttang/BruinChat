@@ -51,6 +51,29 @@
       "format": "date-time",
       "description": "Timestamp when message was last edited"
     },
+    "reactions": {
+      "type": "array",
+      "description": "Emoji reactions attached to the message",
+      "items": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "description": "Emoji reaction value"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "ID of the user who reacted"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the reaction was created"
+          }
+        },
+        "required": ["emoji", "user_id"]
+      }
+    },
     "metadata": {
       "type": "object",
       "properties": {

@@ -11,11 +11,13 @@ type Props = {
     time: string;
     mine: boolean;
     replyTo?: { _id: string; text: string; senderId: { displayName: string } } | null;
+    reactions?: { emoji: string; count: number; reactedByMe: boolean }[];
   };
   onLongPress?: () => void;
+  onReact?: (emoji: string) => void;
 };
 
-export default function MessageBubble({ item, onLongPress }: Props) {
+export default function MessageBubble({ item, onLongPress, onReact }: Props) {
   const isMe = item.mine;
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -55,6 +57,26 @@ export default function MessageBubble({ item, onLongPress }: Props) {
         <Text style={[styles.time, { alignSelf: isMe ? "flex-end" : "flex-start" }]}>
           {item.time}
         </Text>
+
+        {!!item.reactions?.length && (
+          <View style={[styles.reactionsRow, { justifyContent: isMe ? "flex-end" : "flex-start" }]}>
+            {item.reactions.map((reaction) => (
+              <TouchableOpacity
+                key={reaction.emoji}
+                activeOpacity={0.7}
+                onPress={() => onReact?.(reaction.emoji)}
+                style={[
+                  styles.reactionPill,
+                  reaction.reactedByMe && styles.myReactionPill,
+                ]}
+              >
+                <Text style={styles.reactionText}>
+                  {reaction.emoji} {reaction.count}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -118,6 +140,29 @@ function makeStyles(colors: Colors) {
       fontSize: 10,
       color: colors.mutedText,
       marginTop: 2,
+    },
+    reactionsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      marginTop: 4,
+    },
+    reactionPill: {
+      minHeight: 24,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 12,
+      backgroundColor: colors.inputBg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginRight: 4,
+      marginBottom: 4,
+    },
+    myReactionPill: {
+      borderColor: "#007AFF",
+    },
+    reactionText: {
+      fontSize: 12,
+      color: colors.text,
     },
   });
 }

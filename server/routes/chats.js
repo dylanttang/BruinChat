@@ -7,16 +7,72 @@ import { devAuth } from '../middleware/devAuth.js';
 import { sendPush } from '../utils/push.js';
 
 const router = Router();
+const CHAT_LIST_DEFAULT_LIMIT = 20;
+const CHAT_LIST_MAX_LIMIT = 50;
+const MAX_REACTION_LENGTH = 16;
+
+function parseLimit(value, defaultLimit, maxLimit) {
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed)) return defaultLimit;
+  return Math.min(Math.max(parsed, 1), maxLimit);
+}
+
+function populateMessage(query) {
+  return query
+    .populate('senderId', '_id displayName avatarUrl')
+    .populate('reactions.userId', '_id displayName')
+    .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } });
+}
 
 // ---------------------------------------------------------------------------
-// GET /api/chats — List the current user's chats
+// GET /api/chats — List the current user's chats (cursor-paginated)
+//
+// Query params:
+//   before  — ObjectId of a chat; returns chats older than this one
+//   limit   — number of chats to return (default 20, max 50)
+//
+// Response: { chats: [...], hasMore: boolean, nextCursor: string | null }
 // ---------------------------------------------------------------------------
 router.get('/', devAuth, async (req, res) => {
   try {
-    const chats = await Chat.find({ members: req.user._id, archivedBy: { $ne: req.user._id } })
-      .sort({ lastMessageAt: -1 })
+    const limit = parseLimit(req.query.limit, CHAT_LIST_DEFAULT_LIMIT, CHAT_LIST_MAX_LIMIT);
+    const query = { members: req.user._id, archivedBy: { $ne: req.user._id } };
+
+    if (req.query.before) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.before)) {
+        return res.status(400).json({ error: 'Invalid "before" cursor' });
+      }
+
+      const cursorChat = await Chat.findOne({
+        _id: req.query.before,
+        members: req.user._id,
+        archivedBy: { $ne: req.user._id },
+      }).select('_id lastMessageAt').lean();
+
+      if (!cursorChat) {
+        return res.status(400).json({ error: 'Invalid "before" cursor' });
+      }
+
+      query.$or = cursorChat.lastMessageAt
+        ? [
+            { lastMessageAt: { $lt: cursorChat.lastMessageAt } },
+            { lastMessageAt: null },
+            { lastMessageAt: { $exists: false } },
+            { lastMessageAt: cursorChat.lastMessageAt, _id: { $lt: cursorChat._id } },
+          ]
+        : [
+            { lastMessageAt: cursorChat.lastMessageAt, _id: { $lt: cursorChat._id } },
+          ];
+    }
+
+    const chats = await Chat.find(query)
+      .sort({ lastMessageAt: -1, _id: -1 })
+      .limit(limit + 1)
       .populate('members', '_id displayName avatarUrl')
       .lean();
+
+    const hasMore = chats.length > limit;
+    if (hasMore) chats.pop();
 
     // Attach the most recent message text to each chat
     const chatIds = chats.map((c) => c._id);
@@ -32,7 +88,13 @@ router.get('/', devAuth, async (req, res) => {
       lastMessageText: latestByChat[c._id.toString()]?.text ?? null,
     }));
 
-    res.json({ chats: enriched });
+    res.json({
+      chats: enriched,
+      hasMore,
+      nextCursor: hasMore && enriched.length > 0
+        ? enriched[enriched.length - 1]._id.toString()
+        : null,
+    });
   } catch (err) {
     console.error('GET /api/chats error:', err);
     res.status(500).json({ error: 'Failed to fetch chats' });
@@ -170,6 +232,7 @@ router.get('/:id/messages', devAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit + 1)
       .populate('senderId', '_id displayName avatarUrl')
+      .populate('reactions.userId', '_id displayName')
       .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } })
       .lean();
 
@@ -237,10 +300,7 @@ router.post('/:id/messages', devAuth, async (req, res) => {
     await Chat.findByIdAndUpdate(chatId, { lastMessageAt: message.createdAt });
 
     // Populate sender info before returning
-    const populated = await Message.findById(message._id)
-      .populate('senderId', '_id displayName avatarUrl')
-      .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } })
-      .lean();
+    const populated = await populateMessage(Message.findById(message._id)).lean();
 
     if (req.io) {
       req.io.to(chatId).emit('newMessage', populated);
@@ -280,6 +340,76 @@ router.post('/:id/messages', devAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /api/chats/:id/messages error:', err);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/chats/:chatId/messages/:id/react — Toggle a reaction on a message
+//
+// Body: { emoji: string }
+//
+// Response: { message: {...} }
+// ---------------------------------------------------------------------------
+router.post('/:chatId/messages/:id/react', devAuth, async (req, res) => {
+  try {
+    if (req.user.bannedAt) {
+      return res.status(403).json({ error: 'Your account has been banned' });
+    }
+
+    const { chatId, id: messageId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(chatId) || !mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({ error: 'Invalid ID' });
+    }
+
+    const emoji = typeof req.body.emoji === 'string' ? req.body.emoji.trim() : '';
+    if (!emoji || emoji.length > MAX_REACTION_LENGTH) {
+      return res.status(400).json({ error: 'emoji is required' });
+    }
+
+    const chat = await Chat.findById(chatId).lean();
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    const isMember = chat.members.some(
+      (memberId) => memberId.toString() === req.user._id.toString()
+    );
+    if (!isMember) {
+      return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
+    const message = await Message.findOne({ _id: messageId, chatId });
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    if (message.deletedAt) {
+      return res.status(400).json({ error: 'Cannot react to a deleted message' });
+    }
+
+    const userId = req.user._id.toString();
+    const existingIndex = message.reactions.findIndex(
+      (reaction) => reaction.emoji === emoji && reaction.userId.toString() === userId
+    );
+
+    if (existingIndex >= 0) {
+      message.reactions.splice(existingIndex, 1);
+    } else {
+      message.reactions.push({ emoji, userId: req.user._id });
+    }
+
+    await message.save();
+
+    const populated = await populateMessage(Message.findById(message._id)).lean();
+
+    if (req.io) {
+      req.io.to(chatId).emit('messageReacted', populated);
+    }
+
+    res.json({ message: populated });
+  } catch (err) {
+    console.error('POST /api/chats/:chatId/messages/:id/react error:', err);
+    res.status(500).json({ error: 'Failed to react to message' });
   }
 });
 
@@ -353,9 +483,7 @@ router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
     message.editedAt = new Date();
     await message.save();
 
-    const populated = await Message.findById(message._id)
-      .populate('senderId', '_id displayName avatarUrl')
-      .lean();
+    const populated = await populateMessage(Message.findById(message._id)).lean();
 
     if (req.io) {
       req.io.to(chatId).emit('messageEdited', populated);
@@ -393,9 +521,7 @@ router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
     message.deletedAt = new Date();
     await message.save();
 
-    const populated = await Message.findById(message._id)
-      .populate('senderId', '_id displayName avatarUrl')
-      .lean();
+    const populated = await populateMessage(Message.findById(message._id)).lean();
 
     if (req.io) {
       req.io.to(chatId).emit('messageDeleted', populated);

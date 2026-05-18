@@ -7,6 +7,13 @@ const messageSchema = new mongoose.Schema(
     text: { type: String, trim: true, default: '' },
     mediaUrl: { type: String, default: '' },
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+    reactions: [
+      {
+        emoji: { type: String, required: true, trim: true, maxlength: 16 },
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     editedAt: { type: Date, default: null },
     deletedAt: { type: Date, default: null },
   },
@@ -16,4 +23,3 @@ const messageSchema = new mongoose.Schema(
 messageSchema.index({ chatId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Message', messageSchema);
-

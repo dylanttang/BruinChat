@@ -54,6 +54,16 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} left chat ${chatId}`);
   });
 
+  socket.on('typing', ({ chatId, isTyping } = {}) => {
+    if (!chatId || !socket.userId || !socket.rooms.has(chatId)) return;
+
+    socket.to(chatId).emit('typing', {
+      chatId,
+      userId: socket.userId,
+      isTyping: !!isTyping,
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
   });

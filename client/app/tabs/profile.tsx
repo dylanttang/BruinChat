@@ -48,6 +48,7 @@ export default function Profile() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [stats, setStats] = useState<{ courseCount: number; chatCount: number; messageCount: number } | null>(null);
   const [courseListHeight, setCourseListHeight] = useState(0);
   const [courseContentHeight, setCourseContentHeight] = useState(0);
   const [courseScrollY, setCourseScrollY] = useState(0);
@@ -76,9 +77,14 @@ export default function Profile() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      apiFetch("/api/users/me")
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => setUser(data?.user ?? null))
+      Promise.all([
+        apiFetch("/api/users/me").then((res) => (res.ok ? res.json() : null)),
+        apiFetch("/api/users/me/stats").then((res) => (res.ok ? res.json() : null)),
+      ])
+        .then(([userData, statsData]) => {
+          setUser(userData?.user ?? null);
+          setStats(statsData ?? null);
+        })
         .catch((err) => console.error("Failed to load user:", err))
         .finally(() => setLoading(false));
     }, [])
@@ -153,6 +159,24 @@ export default function Profile() {
           ) : (
             <Text style={styles.profileInfoText}>{user.major}</Text>
           )}
+        </View>
+      )}
+
+      {/* Stats */}
+      {!loading && stats && (
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.courseCount}</Text>
+            <Text style={styles.statLabel}>Courses</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.chatCount}</Text>
+            <Text style={styles.statLabel}>Chats</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.messageCount}</Text>
+            <Text style={styles.statLabel}>Messages</Text>
+          </View>
         </View>
       )}
 
@@ -343,6 +367,30 @@ function makeStyles(colors: Colors, tabBarHeight: number) {
     editText: {
       fontWeight: "500",
       color: colors.text,
+    },
+    statsRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginBottom: 12,
+    },
+    statCard: {
+      flex: 1,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingVertical: 12,
+      alignItems: "center",
+    },
+    statValue: {
+      fontSize: 20,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    statLabel: {
+      fontSize: 12,
+      color: colors.mutedText,
+      marginTop: 2,
     },
   });
 }

@@ -8,7 +8,12 @@ const router = Router();
 // The client fetches these once and filters locally.
 router.get('/', async (req, res) => {
   try {
-    const courses = await Course.find({}, '_id subjectArea number title')
+    const query = {};
+    if (req.query.term) {
+      query.term = req.query.term;
+    }
+
+    const courses = await Course.find(query, '_id subjectArea number title term')
       .sort({ subjectArea: 1, number: 1 })
       .lean();
 

@@ -14,42 +14,46 @@ async function main() {
   await Promise.all([User.deleteMany({}), Chat.deleteMany({}), Message.deleteMany({})]);
 
   const users = await User.insertMany([
-    { username: 'jon', displayName: 'Jon' },
-    { username: 'alex', displayName: 'Alex' },
-    { username: 'sam', displayName: 'Sam' },
-    { username: 'taylor', displayName: 'Taylor' },
+    { username: 'mark', displayName: 'Mark' },
+    { username: 'ariana', displayName: 'Ariana' },
+    { username: 'alyssa', displayName: 'Alyssa' },
+    { username: 'jacob', displayName: 'Jacob' },
+    { username: 'jonathan', displayName: 'Jonathan' },
+    { username: 'lucas', displayName: 'Lucas' },
+    { username: 'michelle', displayName: 'Michelle' },
+    { username: 'dummy', displayName: 'Dummy (test)' },
   ]);
 
-  const [jon, alex, sam, taylor] = users;
+  const [mark, ariana, alyssa, jacob, jonathan, lucas, michelle, dummy] = users;
 
   const groupChat = await Chat.create({
-    name: 'BruinChat Test Group',
+    name: 'BruinChat Dev Team',
     isGroup: true,
-    members: [jon._id, alex._id, sam._id, taylor._id],
-    createdBy: jon._id,
+    members: users.map((u) => u._id),
+    createdBy: mark._id,
     lastMessageAt: new Date(),
   });
 
-  // Second chat — only jon and sam are members (for testing per-user chat listing)
+  // Second chat — backend crew (for testing per-user chat listing)
   const groupChat2 = await Chat.create({
-    name: 'CS 32 Study Group',
+    name: 'Backend Squad',
     isGroup: true,
-    members: [jon._id, sam._id],
-    createdBy: sam._id,
+    members: [mark._id, jacob._id, lucas._id, jonathan._id],
+    createdBy: mark._id,
     lastMessageAt: new Date(),
   });
 
   const now = Date.now();
   const messages = await Message.insertMany([
-    { chatId: groupChat._id, senderId: jon._id, text: 'Welcome to BruinChat!', createdAt: new Date(now - 60_000), updatedAt: new Date(now - 60_000) },
-    { chatId: groupChat._id, senderId: alex._id, text: 'Ayy we are live.', createdAt: new Date(now - 45_000), updatedAt: new Date(now - 45_000) },
-    { chatId: groupChat._id, senderId: sam._id, text: 'Testing messages ✅', createdAt: new Date(now - 30_000), updatedAt: new Date(now - 30_000) },
-    { chatId: groupChat._id, senderId: taylor._id, text: 'Let’s ship.', createdAt: new Date(now - 15_000), updatedAt: new Date(now - 15_000) },
+    { chatId: groupChat._id, senderId: mark._id, text: 'Welcome to BruinChat!', createdAt: new Date(now - 60_000), updatedAt: new Date(now - 60_000) },
+    { chatId: groupChat._id, senderId: michelle._id, text: 'Hyped to ship this 🎉', createdAt: new Date(now - 45_000), updatedAt: new Date(now - 45_000) },
+    { chatId: groupChat._id, senderId: jacob._id, text: 'Chat endpoints are live ✅', createdAt: new Date(now - 30_000), updatedAt: new Date(now - 30_000) },
+    { chatId: groupChat._id, senderId: ariana._id, text: 'Dark mode also live!', createdAt: new Date(now - 15_000), updatedAt: new Date(now - 15_000) },
   ]);
 
   const messages2 = await Message.insertMany([
-    { chatId: groupChat2._id, senderId: sam._id, text: 'Anyone down to study for the midterm?', createdAt: new Date(now - 20_000), updatedAt: new Date(now - 20_000) },
-    { chatId: groupChat2._id, senderId: jon._id, text: 'Yeah I’m in, Powell at 7?', createdAt: new Date(now - 10_000), updatedAt: new Date(now - 10_000) },
+    { chatId: groupChat2._id, senderId: jacob._id, text: 'Should we add WebSockets next?', createdAt: new Date(now - 20_000), updatedAt: new Date(now - 20_000) },
+    { chatId: groupChat2._id, senderId: mark._id, text: 'After OAuth lands.', createdAt: new Date(now - 10_000), updatedAt: new Date(now - 10_000) },
   ]);
 
   await Chat.updateOne({ _id: groupChat._id }, { $set: { lastMessageAt: messages[messages.length - 1].createdAt } });

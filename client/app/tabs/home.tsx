@@ -1,19 +1,103 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useMemo, useState } from "react";
+import { apiFetch } from "../lib/api";
 import { useTheme, Colors } from "../context/ThemeContext";
 
-const chats = [
-  { id: "1", name: "Group Chat Name", lastMessage: "Last message sent...", time: "2:41 PM" },
-  { id: "2", name: "Group Chat Name", lastMessage: "Last message sent...", time: "1:18 PM" },
-  { id: "3", name: "Group Chat Name", lastMessage: "Last message sent...", time: "Yesterday" },
-];
+const CHAT_PAGE_SIZE = 20;
+
+type Chat = {
+  _id: string;
+  name: string;
+  lastMessageAt: string | null;
+  lastMessageText: string | null;
+  members: { _id: string; displayName: string }[];
+};
+
+function formatTime(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } else if (diffDays === 1) {
+    return "Yesterday";
+  } else if (diffDays < 7) {
+    return date.toLocaleDateString([], { weekday: "short" });
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
 export default function Home() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+
+  const loadChats = useCallback(async (
+    { reset = true, before = null }: { reset?: boolean; before?: string | null } = {}
+  ) => {
+    try {
+      const cursor = reset ? null : before;
+      const query = cursor
+        ? `?before=${encodeURIComponent(cursor)}&limit=${CHAT_PAGE_SIZE}`
+        : `?limit=${CHAT_PAGE_SIZE}`;
+      const res = await apiFetch(`/api/chats${query}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setChats((prev) => {
+        if (reset) return data.chats;
+
+        const existingIds = new Set(prev.map((chat) => chat._id));
+        const newChats = data.chats.filter((chat: Chat) => !existingIds.has(chat._id));
+        return [...prev, ...newChats];
+      });
+      setHasMore(!!data.hasMore);
+      setNextCursor(data.nextCursor ?? null);
+    } catch (err) {
+      console.error("Failed to fetch chats:", err);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      loadChats().finally(() => setLoading(false));
+    }, [loadChats])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadChats({ reset: true });
+    setRefreshing(false);
+  };
+
+  const loadMoreChats = async () => {
+    if (!hasMore || !nextCursor || loadingMore || loading || refreshing) return;
+
+    setLoadingMore(true);
+    await loadChats({ reset: false, before: nextCursor });
+    setLoadingMore(false);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -21,28 +105,70 @@ export default function Home() {
       <View style={styles.header}>
         <View style={styles.iconPlaceholder} />
         <Text style={styles.title}>BruinChat</Text>
-        <View style={styles.iconPlaceholder} />
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => router.push("/tabs/profile")}
+          accessibilityRole="button"
+          accessibilityLabel="Open profile settings"
+        >
+          <Ionicons name="person-circle-outline" size={30} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
-      {/* Chat List */}
-      <FlatList
-        data={chats}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color={colors.mutedText} />
+        </View>
+      ) : chats.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>
+            No chats yet. Add classes to get started.
+          </Text>
           <TouchableOpacity
-            style={styles.chatRow}
-            onPress={() => router.push(`/chat/${item.id}`)}
+            style={styles.emptyButton}
+            onPress={() => router.push("/auth/questionnaire/step3")}
+            accessibilityRole="button"
+            accessibilityLabel="Add classes"
           >
-            <View style={styles.avatar} />
-            <View style={styles.chatText}>
-              <Text style={styles.chatName}>{item.name}</Text>
-              <Text style={styles.lastMessage}>{item.lastMessage}</Text>
-            </View>
-            <Text style={styles.time}>{item.time}</Text>
+            <Text style={styles.emptyButtonText}>Add Classes</Text>
           </TouchableOpacity>
-        )}
-      />
+        </View>
+      ) : (
+        <FlatList
+          data={chats}
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.mutedText} />
+          }
+          onEndReached={loadMoreChats}
+          onEndReachedThreshold={0.35}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={colors.mutedText} />
+              </View>
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.chatRow}
+              onPress={() => router.push(`/chat/${item._id}`)}
+            >
+              <View style={styles.avatar} />
+
+              <View style={styles.chatText}>
+                <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.lastMessage} numberOfLines={1}>
+                  {item.lastMessageText ?? "No messages yet"}
+                </Text>
+              </View>
+
+              <Text style={styles.time}>{formatTime(item.lastMessageAt)}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -73,8 +199,19 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.avatarBg,
       borderRadius: 4,
     },
+    profileButton: {
+      width: 32,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 16,
+    },
     list: {
       paddingTop: 8,
+    },
+    footerLoader: {
+      paddingVertical: 16,
+      alignItems: "center",
     },
     chatRow: {
       flexDirection: "row",
@@ -107,6 +244,29 @@ function makeStyles(colors: Colors) {
     time: {
       fontSize: 12,
       color: colors.mutedText,
+    },
+    emptyState: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 32,
+    },
+    emptyText: {
+      fontSize: 16,
+      color: colors.subtext,
+      textAlign: "center",
+    },
+    emptyButton: {
+      marginTop: 20,
+      backgroundColor: colors.inputBg,
+      paddingHorizontal: 30,
+      paddingVertical: 12,
+      borderRadius: 20,
+    },
+    emptyButtonText: {
+      fontSize: 16,
+      fontWeight: "500",
+      color: colors.text,
     },
   });
 }

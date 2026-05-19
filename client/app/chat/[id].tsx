@@ -7,28 +7,373 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Socket } from "socket.io-client";
+import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
+import { apiFetch, getDevUserId } from "../lib/api";
+import { uploadToCloudinary } from "../lib/cloudinary";
+import { createSocket } from "../lib/socket";
 import { useTheme, Colors } from "../context/ThemeContext";
 
+const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
+const TYPING_IDLE_MS = 1800;
+const TYPING_EVENT_TTL_MS = 3000;
+
+type Reaction = {
+  _id?: string;
+  emoji: string;
+  userId: string | { _id: string; displayName?: string };
+  createdAt?: string;
+};
+
+type Message = {
+  _id: string;
+  text: string;
+  mediaUrl?: string | null;
+  createdAt: string;
+  senderId: { _id: string; displayName: string; avatarUrl: string };
+  replyTo?: { _id: string; text: string; senderId: { displayName: string } } | null;
+  reactions?: Reaction[];
+};
+
+type DateSeparator = { _id: string; type: "date"; label: string };
+type ListItem = Message | DateSeparator;
+
+function formatDateLabel(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) return "Today";
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate();
+  if (isYesterday) return "Yesterday";
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+function injectDateSeparators(messages: Message[]): ListItem[] {
+  // messages are newest-first (inverted list), so iterate and inject separators
+  const result: ListItem[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    result.push(messages[i]);
+    const curr = new Date(messages[i].createdAt);
+    const next = messages[i + 1] ? new Date(messages[i + 1].createdAt) : null;
+    const isDifferentDay =
+      !next ||
+      curr.getFullYear() !== next.getFullYear() ||
+      curr.getMonth() !== next.getMonth() ||
+      curr.getDate() !== next.getDate();
+    if (isDifferentDay) {
+      result.push({ _id: `sep-${messages[i]._id}`, type: "date", label: formatDateLabel(messages[i].createdAt) });
+    }
+  }
+  return result;
+}
+
+type Chat = {
+  _id: string;
+  name: string;
+  members: { _id: string; displayName: string }[];
+};
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function getReactionUserId(reaction: Reaction): string {
+  return typeof reaction.userId === "string" ? reaction.userId : reaction.userId._id;
+}
+
+function groupReactions(reactions: Reaction[] = [], currentUserId: string | null) {
+  const grouped = new Map<string, { emoji: string; count: number; reactedByMe: boolean }>();
+
+  reactions.forEach((reaction) => {
+    const existing = grouped.get(reaction.emoji) ?? {
+      emoji: reaction.emoji,
+      count: 0,
+      reactedByMe: false,
+    };
+
+    existing.count += 1;
+    existing.reactedByMe = existing.reactedByMe || getReactionUserId(reaction) === currentUserId;
+    grouped.set(reaction.emoji, existing);
+  });
+
+  return Array.from(grouped.values());
+}
+
+function upsertMessage(messages: Message[], incoming: Message): Message[] {
+  const existing = messages.some((message) => message._id === incoming._id);
+  if (existing) {
+    return messages.map((message) => (message._id === incoming._id ? incoming : message));
+  }
+  return [incoming, ...messages];
+}
+
+function replaceMessage(messages: Message[], incoming: Message): Message[] {
+  return messages.map((message) => (message._id === incoming._id ? incoming : message));
+}
+
 export default function ChatScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const listRef = useRef<FlatList>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingStartedRef = useRef(false);
+  const remoteTypingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chat, setChat] = useState<Chat | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
 
-  // mock data
-  const messages = [
-    { id: "1", user: "Alex", text: "Hey everyone!", time: "2:10 PM", mine: false },
-    { id: "2", user: "Alex", text: "Are we meeting today?", time: "2:11 PM", mine: false },
-    { id: "3", user: "Me", text: "Yep 👍", time: "2:12 PM", mine: true },
-    { id: "4", user: "Me", text: "Library at 6?", time: "2:12 PM", mine: true },
-  ];
+  const loadData = useCallback(async () => {
+    try {
+      const [userId, chatRes, msgsRes] = await Promise.all([
+        getDevUserId(),
+        apiFetch(`/api/chats/${id}`),
+        apiFetch(`/api/chats/${id}/messages`),
+      ]);
+      setCurrentUserId(userId);
+
+      if (chatRes.ok) {
+        const data = await chatRes.json();
+        setChat(data.chat);
+      }
+      if (msgsRes.ok) {
+        const data = await msgsRes.json();
+        setMessages(data.messages);
+      }
+    } catch (err) {
+      console.error("Failed to load chat:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const clearRemoteTypingUser = useCallback((userId: string) => {
+    const timer = remoteTypingTimersRef.current[userId];
+    if (timer) {
+      clearTimeout(timer);
+      delete remoteTypingTimersRef.current[userId];
+    }
+
+    setTypingUserIds((prev) => prev.filter((id) => id !== userId));
+  }, []);
+
+  const stopTyping = useCallback(() => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (typingStartedRef.current) {
+      socketRef.current?.emit("typing", { chatId: id, isTyping: false });
+      typingStartedRef.current = false;
+    }
+  }, [id]);
+
+  const handleMessageChange = useCallback((text: string) => {
+    setMessage(text);
+
+    if (!text.trim()) {
+      stopTyping();
+      return;
+    }
+
+    if (!typingStartedRef.current) {
+      socketRef.current?.emit("typing", { chatId: id, isTyping: true });
+      typingStartedRef.current = true;
+    }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(stopTyping, TYPING_IDLE_MS);
+  }, [id, stopTyping]);
+
+  useEffect(() => {
+    if (!id || !currentUserId) return;
+
+    let isActive = true;
+    setTypingUserIds([]);
+
+    createSocket().then((socket) => {
+      if (!isActive) {
+        socket.disconnect();
+        return;
+      }
+
+      socketRef.current = socket;
+
+      const joinChat = () => socket.emit("joinChat", id);
+      socket.on("connect", joinChat);
+      if (socket.connected) joinChat();
+
+      socket.on("newMessage", (incoming: Message) => {
+        setMessages((prev) => upsertMessage(prev, incoming));
+        if (incoming.senderId?._id) clearRemoteTypingUser(incoming.senderId._id);
+      });
+
+      socket.on("messageEdited", (incoming: Message) => {
+        setMessages((prev) => replaceMessage(prev, incoming));
+      });
+
+      socket.on("messageDeleted", (incoming: Message) => {
+        setMessages((prev) => replaceMessage(prev, incoming));
+      });
+
+      socket.on("messageReacted", (incoming: Message) => {
+        setMessages((prev) => replaceMessage(prev, incoming));
+      });
+
+      socket.on("typing", ({ chatId, userId, isTyping }) => {
+        if (chatId !== id || !userId || userId === currentUserId) return;
+
+        if (!isTyping) {
+          clearRemoteTypingUser(userId);
+          return;
+        }
+
+        setTypingUserIds((prev) => (
+          prev.includes(userId) ? prev : [...prev, userId]
+        ));
+
+        const existingTimer = remoteTypingTimersRef.current[userId];
+        if (existingTimer) clearTimeout(existingTimer);
+        remoteTypingTimersRef.current[userId] = setTimeout(
+          () => clearRemoteTypingUser(userId),
+          TYPING_EVENT_TTL_MS
+        );
+      });
+    });
+
+    return () => {
+      isActive = false;
+      stopTyping();
+      Object.values(remoteTypingTimersRef.current).forEach(clearTimeout);
+      remoteTypingTimersRef.current = {};
+
+      const socket = socketRef.current;
+      if (socket) {
+        socket.emit("leaveChat", id);
+        socket.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, [clearRemoteTypingUser, currentUserId, id, stopTyping]);
+
+  const reactToMessage = useCallback(async (messageId: string, emoji: string) => {
+    try {
+      const res = await apiFetch(`/api/chats/${id}/messages/${messageId}/react`, {
+        method: "POST",
+        body: JSON.stringify({ emoji }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      setMessages((prev) => replaceMessage(prev, data.message));
+    } catch (err) {
+      console.error("Failed to react:", err);
+    }
+  }, [id]);
+
+  const typingLabel = useMemo(() => {
+    const names = typingUserIds.map((userId) => (
+      chat?.members.find((member) => member._id === userId)?.displayName ?? "Someone"
+    ));
+
+    if (names.length === 0) return "";
+    if (names.length === 1) return `${names[0]} is typing...`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+    return `${names[0]} and ${names.length - 1} others are typing...`;
+  }, [chat?.members, typingUserIds]);
+
+  const sendMessage = async () => {
+    const text = message.trim();
+    if (!text || sending) {
+      if (!text) stopTyping();
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await apiFetch(`/api/chats/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ text, ...(replyingTo ? { replyTo: replyingTo._id } : {}) }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setMessages((prev) => upsertMessage(prev, data.message));
+      setMessage("");
+      setReplyingTo(null);
+      stopTyping();
+    } catch (err) {
+      console.error("Failed to send:", err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const pickAndSendImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission required", "Please allow photo access to send images.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const uri = result.assets[0].uri;
+    setUploadingMedia(true);
+    try {
+      const mediaUrl = await uploadToCloudinary(uri, "messages");
+      const res = await apiFetch(`/api/chats/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ text: "", mediaUrl }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setMessages((prev) => upsertMessage(prev, data.message));
+    } catch (err: any) {
+      Alert.alert("Upload failed", err.message ?? "Could not send image. Try again.");
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -37,35 +382,131 @@ export default function ChatScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Group {id}</Text>
+
+        <Text style={styles.title} numberOfLines={1}>
+          {chat?.name ?? "Loading..."}
+        </Text>
+
         <TouchableOpacity onPress={() => router.push(`/chat/${id}/info`)}>
           <Text style={styles.menuDot}>•••</Text>
         </TouchableOpacity>
       </View>
 
       {/* MESSAGES */}
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => <MessageBubble item={item} />}
-      />
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator color={colors.mutedText} />
+        </View>
+      ) : messages.length === 0 ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
+          <Text style={{ color: colors.subtext, textAlign: "center" }}>
+            No messages yet. Say hi!
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={injectDateSeparators(messages)}
+          inverted
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => {
+            if ("type" in item && item.type === "date") {
+              return (
+                <View style={styles.dateSeparator}>
+                  <Text style={styles.dateSeparatorText}>{item.label}</Text>
+                </View>
+              );
+            }
+            const msg = item as Message;
+            return (
+              <MessageBubble
+                item={{
+                  id: msg._id,
+                  user: msg.senderId.displayName,
+                  text: msg.text,
+                  mediaUrl: msg.mediaUrl ?? null,
+                  time: formatTime(msg.createdAt),
+                  mine: currentUserId === msg.senderId._id,
+                  replyTo: msg.replyTo ?? null,
+                  reactions: groupReactions(msg.reactions, currentUserId),
+                }}
+                onLongPress={() => setActionTarget(msg)}
+                onReact={(emoji) => reactToMessage(msg._id, emoji)}
+              />
+            );
+          }}
+        />
+      )}
 
       {/* INPUT BAR */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        {actionTarget && (
+          <View style={styles.actionBar}>
+            <View style={styles.actionEmojiRow}>
+              {REACTION_OPTIONS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={styles.actionEmojiButton}
+                  onPress={() => {
+                    reactToMessage(actionTarget._id, emoji);
+                    setActionTarget(null);
+                  }}
+                >
+                  <Text style={styles.actionEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={styles.actionReplyButton}
+              onPress={() => {
+                setReplyingTo(actionTarget);
+                setActionTarget(null);
+              }}
+            >
+              <Text style={styles.actionReplyText}>Reply</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionCloseButton} onPress={() => setActionTarget(null)}>
+              <Text style={styles.actionCloseText}>×</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {!!typingLabel && (
+          <View style={styles.typingBar}>
+            <Text style={styles.typingText}>{typingLabel}</Text>
+          </View>
+        )}
+        {replyingTo && (
+          <View style={styles.replyBar}>
+            <View style={styles.replyBarContent}>
+              <Text style={styles.replyBarName}>{replyingTo.senderId.displayName}</Text>
+              <Text style={styles.replyBarText} numberOfLines={1}>{replyingTo.text}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyBarClose}>
+              <Text style={{ fontSize: 18, color: colors.mutedText }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.plusBtn}>
-            <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
+          <TouchableOpacity style={styles.plusBtn} onPress={pickAndSendImage} disabled={uploadingMedia || sending}>
+            {uploadingMedia
+              ? <ActivityIndicator size="small" color={colors.mutedText} />
+              : <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
+            }
           </TouchableOpacity>
+
           <TextInput
             placeholder="Type a message..."
             placeholderTextColor={colors.mutedText}
             style={styles.input}
             value={message}
-            onChangeText={setMessage}
+            onChangeText={handleMessageChange}
+            onSubmitEditing={sendMessage}
+            editable={!sending}
           />
-          <TouchableOpacity style={styles.sendBtn}>
-            <Text style={{ fontSize: 18, color: colors.text }}>➤</Text>
+
+          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || !message.trim()}>
+            <Text style={{ fontSize: 18, color: colors.text, opacity: sending || !message.trim() ? 0.3 : 1 }}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -95,6 +536,9 @@ function makeStyles(colors: Colors) {
     title: {
       fontSize: 18,
       fontWeight: "600",
+      flex: 1,
+      textAlign: "center",
+      paddingHorizontal: 12,
       color: colors.text,
     },
     menuDot: {
@@ -111,7 +555,6 @@ function makeStyles(colors: Colors) {
       padding: 10,
       borderTopWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.background,
     },
     input: {
       flex: 1,
@@ -132,6 +575,100 @@ function makeStyles(colors: Colors) {
     },
     sendBtn: {
       paddingHorizontal: 6,
+    },
+    dateSeparator: {
+      alignItems: "center",
+      marginVertical: 12,
+    },
+    dateSeparatorText: {
+      fontSize: 12,
+      color: colors.mutedText,
+    },
+    actionBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    actionEmojiRow: {
+      flexDirection: "row",
+      flex: 1,
+    },
+    actionEmojiButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.inputBg,
+      marginRight: 4,
+    },
+    actionEmoji: {
+      fontSize: 16,
+    },
+    actionReplyButton: {
+      minHeight: 30,
+      paddingHorizontal: 10,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.inputBg,
+      marginLeft: 4,
+    },
+    actionReplyText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    actionCloseButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: 6,
+    },
+    actionCloseText: {
+      fontSize: 20,
+      color: colors.mutedText,
+    },
+    typingBar: {
+      paddingHorizontal: 16,
+      paddingVertical: 6,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    typingText: {
+      fontSize: 12,
+      color: colors.mutedText,
+    },
+    replyBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    replyBarContent: {
+      flex: 1,
+    },
+    replyBarName: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    replyBarText: {
+      fontSize: 12,
+      color: colors.subtext,
+    },
+    replyBarClose: {
+      paddingLeft: 12,
     },
   });
 }

@@ -1,9 +1,12 @@
-import { View, Text } from "react-native";
+import { useEffect } from "react";
+import { useRouter } from "expo-router";
 
 export default function Signup() {
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-      <Text>Sign Up Screen</Text>
-    </View>
-  );
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/auth/welcome/welcome");
+  }, [router]);
+
+  return null;
 }

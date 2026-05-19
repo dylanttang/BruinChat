@@ -1,185 +1,161 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
+  TextInput,
+  ScrollView,
 } from "react-native";
-import { useRouter } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
+import { useLocalSearchParams, useRouter } from "expo-router";
+
 export default function Step2() {
   const router = useRouter();
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const canContinue = useMemo(() => true, []); // allow continue even if skipped
-  useEffect(() => {
-    (async () => {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      setHasPermission(status === "granted");
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission needed",
-          "We need access to your photos so you can upload a profile picture."
-        );
-      }
-    })();
-  }, []);
-  const pickImage = async () => {
-    if (hasPermission === false) {
-      Alert.alert(
-        "Permission denied",
-        "Please enable photo permissions in Settings to upload an image."
-      );
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    });
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-    }
-  };
-  const onContinue = () => {
-    // TODO: persist/upload imageUri if needed
-    router.push("/auth/questionnaire/step3");
-  };
-  const onSkip = () => {
-    setImageUri(null);
-    router.push("/auth/questionnaire/step3");
-  };
+  const params = useLocalSearchParams<{ year?: string }>();
+  const [major, setMajor] = useState("");
+  const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
+
+  const goals = useMemo(
+    () => [
+      "Find classmates in my courses",
+      "Get help with coursework",
+      "Build study groups",
+      "Meet new people on campus",
+    ],
+    []
+  );
+
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={styles.content}>
-        <Text style={styles.title}>Add a Profile Picture</Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.step}>Step 2 of 3</Text>
+        <Text style={styles.title}>Tell us a little more</Text>
         <Text style={styles.subtitle}>
-          Your profile picture will be visible{"\n"}to everyone.
+          Year: {params.year || "Not provided"}
         </Text>
-        <TouchableOpacity
-          onPress={pickImage}
-          activeOpacity={0.85}
-          style={styles.circleUpload}
-        >
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.circleImage} />
-          ) : (
-            <Text style={styles.circlePlaceholder}>Upload an image</Text>
-          )}
-        </TouchableOpacity>
-        <View style={styles.buttons}>
-          <TouchableOpacity
-            onPress={onContinue}
-            activeOpacity={0.85}
-            disabled={!canContinue}
-            style={[styles.primaryButton, !canContinue && styles.buttonDisabled]}
-          >
-            <Text style={styles.primaryText}>Continue</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onSkip}
-            activeOpacity={0.85}
-            style={styles.secondaryButton}
-          >
-            <Text style={styles.secondaryText}>Skip</Text>
-          </TouchableOpacity>
+
+        <Text style={styles.sectionLabel}>What is your major?</Text>
+        <TextInput
+          value={major}
+          onChangeText={setMajor}
+          placeholder="e.g. Computer Science"
+          style={styles.input}
+          autoCapitalize="words"
+        />
+
+        <Text style={styles.sectionLabel}>What do you want from BruinChat?</Text>
+        <View style={styles.options}>
+          {goals.map((goal) => {
+            const selected = selectedGoal === goal;
+            return (
+              <TouchableOpacity
+                key={goal}
+                style={[styles.option, selected && styles.optionSelected]}
+                onPress={() => setSelectedGoal(goal)}
+              >
+                <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                  {goal}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      </View>
-    </KeyboardAvoidingView>
+
+        <TouchableOpacity
+          style={[styles.button, !selectedGoal && styles.buttonDisabled]}
+          disabled={!selectedGoal}
+          onPress={() =>
+            router.push({
+              pathname: "/auth/questionnaire/step3",
+              params: {
+                year: params.year ?? "",
+                major: major.trim(),
+                goal: selectedGoal ?? "",
+              },
+            })
+          }
+        >
+          <Text style={styles.buttonText}>Continue to Courses</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
-const CIRCLE_SIZE = 132;
+
 const styles = StyleSheet.create({
-  screen: {
+  container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fff",
   },
   content: {
-    flex: 1,
-    paddingTop: 190,
-    paddingHorizontal: 32,
-    alignItems: "center",
+    padding: 24,
+    paddingBottom: 40,
+  },
+  step: {
+    marginTop: 12,
+    color: "#888",
+    fontSize: 13,
   },
   title: {
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: "800",
-    color: "#111111",
-    textAlign: "center",
-    marginBottom: 10,
-    letterSpacing: -0.2,
+    marginTop: 16,
+    fontSize: 30,
+    fontWeight: "700",
   },
   subtitle: {
-    fontSize: 13.5,
-    lineHeight: 18,
-    fontWeight: "500",
-    color: "#6E6E6E",
-    textAlign: "center",
-    marginBottom: 26,
+    marginTop: 10,
+    color: "#666",
+    fontSize: 15,
   },
-  circleUpload: {
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    borderRadius: CIRCLE_SIZE / 2,
-    borderWidth: 1.2,
-    borderColor: "#2C2C2C",
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    marginBottom: 34,
-  },
-  circlePlaceholder: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#B6B6B6",
-    textAlign: "center",
-  },
-  circleImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
-  buttons: {
-    width: "100%",
-    alignItems: "center",
-    gap: 14,
-  },
-  primaryButton: {
-    width: 220,
-    height: 54,
-    borderRadius: 28,
-    backgroundColor: "#5F5F5F",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryText: {
-    color: "#FFFFFF",
+  sectionLabel: {
+    marginTop: 26,
+    marginBottom: 8,
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "600",
+    color: "#222",
   },
-  secondaryButton: {
-    width: 220,
-    height: 54,
-    borderRadius: 28,
-    backgroundColor: "#CFCFCF",
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+  },
+  options: {
+    gap: 10,
+  },
+  option: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  optionSelected: {
+    borderColor: "#555",
+    backgroundColor: "#f3f3f3",
+  },
+  optionText: {
+    fontSize: 15,
+    color: "#222",
+  },
+  optionTextSelected: {
+    fontWeight: "600",
+  },
+  button: {
+    marginTop: 28,
+    backgroundColor: "#777",
+    borderRadius: 18,
     alignItems: "center",
-    justifyContent: "center",
-  },
-  secondaryText: {
-    color: "#111111",
-    fontSize: 16,
-    fontWeight: "700",
+    paddingVertical: 14,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.45,
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

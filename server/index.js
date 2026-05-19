@@ -10,6 +10,7 @@ import usersRoutes from './routes/users.js';
 import reportsRoutes from './routes/reports.js';
 import adminRoutes from './routes/admin.js';
 import uploadRoutes from './routes/upload.js';
+import feedbackRoutes from './routes/feedback.js';
 
 dotenv.config();
 
@@ -53,6 +54,16 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} left chat ${chatId}`);
   });
 
+  socket.on('typing', ({ chatId, isTyping } = {}) => {
+    if (!chatId || !socket.userId || !socket.rooms.has(chatId)) return;
+
+    socket.to(chatId).emit('typing', {
+      chatId,
+      userId: socket.userId,
+      isTyping: !!isTyping,
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
   });
@@ -79,6 +90,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;

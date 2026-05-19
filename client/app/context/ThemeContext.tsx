@@ -15,6 +15,7 @@ export type Colors = {
   inputBg: string;
   avatarBg: string;
   tabBar: string;
+  primary: string;
 };
 
 const lightColors: Colors = {
@@ -28,6 +29,7 @@ const lightColors: Colors = {
   inputBg: "#f2f2f2",
   avatarBg: "#ddd",
   tabBar: "#fff",
+  primary: "#2563EB",
 };
 
 const darkColors: Colors = {
@@ -41,6 +43,7 @@ const darkColors: Colors = {
   inputBg: "#2c2c2e",
   avatarBg: "#3a3a3c",
   tabBar: "#1c1c1e",
+  primary: "#3B82F6",
 };
 
 const STORAGE_KEY = "@bruinchat_theme";

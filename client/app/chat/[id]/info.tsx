@@ -1,200 +1,118 @@
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  Switch,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../../lib/api";
 import { useTheme, Colors } from "../../context/ThemeContext";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
-const DEV_USER_ID = process.env.EXPO_PUBLIC_DEV_USER_ID || "";
+type Member = {
+  _id: string;
+  displayName: string;
+  avatarUrl: string;
+};
+
+type Course = {
+  _id: string;
+  subjectArea: string;
+  number: string;
+  title: string;
+};
+
+type Chat = {
+  _id: string;
+  name: string;
+  members: Member[];
+  course: Course | null;
+};
 
 export default function ChatInfo() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
-  const chatId = Array.isArray(params.id) ? params.id[0] : params.id ?? "";
-
+  const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [chatNotif, setChatNotif] = useState(true);
-  const [archiveChat, setArchiveChat] = useState(false);
-  const [leaving, setLeaving] = useState(false);
+  const [chat, setChat] = useState<Chat | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const courseDetails = {
-    professor: "Name",
-    lectureTime: "Time",
-    midtermDates: "Dates",
-    finalDates: "Dates",
-  };
+  useEffect(() => {
+    apiFetch(`/api/chats/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setChat(data?.chat ?? null))
+      .catch((err) => console.error("Failed to load chat info:", err))
+      .finally(() => setLoading(false));
+  }, [id]);
 
-  const members = Array(8).fill({ username: "Username", courses: "Courses" });
-
-  const confirmLeave = () => {
-    if (!chatId) {
-      Alert.alert("Missing chat", "Could not determine which chat to leave.");
-      return;
-    }
-    if (!DEV_USER_ID.trim()) {
-      Alert.alert(
-        "Dev user id",
-        "Set EXPO_PUBLIC_DEV_USER_ID in client/.env so the API knows who is leaving (until real auth ships)."
-      );
-      return;
-    }
-
-    Alert.alert(
-      "Leave chat?",
-      "You will stop receiving messages from this chat.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Leave",
-          style: "destructive",
-          onPress: () => void leaveChat(),
-        },
-      ]
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator color={colors.mutedText} />
+      </SafeAreaView>
     );
-  };
+  }
 
-  const leaveChat = async () => {
-    setLeaving(true);
-    try {
-      const res = await fetch(
-        `${API_URL}/api/chats/${encodeURIComponent(chatId)}/members/me`,
-        {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            "x-user-id": DEV_USER_ID.trim(),
-          },
-        }
-      );
-
-      if (res.ok) {
-        router.replace("/tabs/home");
-        return;
-      }
-
-      const data = await res.json().catch(() => ({}));
-      const msg =
-        typeof data.error === "string"
-          ? data.error
-          : typeof data.message === "string"
-            ? data.message
-            : `Request failed (${res.status})`;
-      Alert.alert("Could not leave chat", msg);
-    } catch (e) {
-      Alert.alert("Network error", e instanceof Error ? e.message : "Try again.");
-    } finally {
-      setLeaving(false);
-    }
-  };
+  if (!chat) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={{ color: colors.subtext }}>Chat not found.</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>
-          Chat Info & Settings
-        </Text>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.headerRight}>
-          <Text style={styles.close}>✕</Text>
-        </TouchableOpacity>
+        <Text style={styles.title} numberOfLines={1}>{chat.name}</Text>
+        <View style={{ width: 32 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <Text style={[styles.section, styles.sectionFirst]}>Class Details</Text>
-        <View style={styles.card}>
-          <View style={styles.detailRow}>
-            <Text style={styles.label}>Professor</Text>
-            <Text style={styles.value}>{courseDetails.professor}</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Course Details (if this is a course chat) */}
+        {chat.course && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Course</Text>
+            <View style={styles.row}>
+              <Text style={styles.label}>Subject</Text>
+              <Text style={styles.value}>{chat.course.subjectArea}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.label}>Number</Text>
+              <Text style={styles.value}>{chat.course.number}</Text>
+            </View>
+            <View style={[styles.row, { borderBottomWidth: 0 }]}>
+              <Text style={styles.label}>Title</Text>
+              <Text style={[styles.value, { flex: 1, textAlign: "right", marginLeft: 12 }]}>
+                {chat.course.title}
+              </Text>
+            </View>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.label}>Lecture Time</Text>
-            <Text style={styles.value}>{courseDetails.lectureTime}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.label}>Midterm Dates</Text>
-            <Text style={styles.value}>{courseDetails.midtermDates}</Text>
-          </View>
-          <View style={[styles.detailRow, styles.detailRowLast]}>
-            <Text style={styles.label}>Final Dates</Text>
-            <Text style={styles.value}>{courseDetails.finalDates}</Text>
-          </View>
-          <Text style={styles.innerSectionTitle}>Course Overview</Text>
-          <View style={styles.overviewPlaceholder} />
-        </View>
+        )}
 
-        <Text style={styles.section}>Notifications</Text>
+        {/* Members */}
         <View style={styles.card}>
-          <View style={[styles.row, styles.lastRow]}>
-            <Text style={styles.rowText}>Chat Notifications</Text>
-            <Switch value={chatNotif} onValueChange={setChatNotif} />
-          </View>
-        </View>
-
-        <Text style={styles.section}>Archive</Text>
-        <View style={styles.card}>
-          <View style={[styles.row, styles.lastRow]}>
-            <Text style={styles.rowText}>Archive Chat</Text>
-            <Switch value={archiveChat} onValueChange={setArchiveChat} />
-          </View>
-        </View>
-
-        <Text style={styles.section}>Report</Text>
-        <View style={styles.card}>
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => router.push("/report")}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.rowText}>Report a user</Text>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.row, styles.lastRow]}
-            onPress={() => router.push("/report/past")}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.rowText}>Past reports</Text>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.section}>People ({members.length})</Text>
-        <View style={styles.card}>
-          {members.map((member, index) => (
+          <Text style={styles.sectionTitle}>
+            Members ({chat.members.length})
+          </Text>
+          {chat.members.map((member, index) => (
             <View
-              key={index}
-              style={[styles.memberRow, index === members.length - 1 && styles.lastRow]}
+              key={member._id}
+              style={[
+                styles.memberRow,
+                index === chat.members.length - 1 && { borderBottomWidth: 0 },
+              ]}
             >
               <View style={styles.avatar} />
-              <Text style={styles.memberName}>{member.username}</Text>
-              <Text style={styles.memberCourses}>{member.courses}</Text>
+              <Text style={styles.memberName}>{member.displayName}</Text>
             </View>
           ))}
         </View>
 
-        <TouchableOpacity
-          style={[styles.leaveButton, (leaving || !chatId) && styles.leaveButtonDisabled]}
-          onPress={confirmLeave}
-          disabled={leaving || !chatId}
-        >
-          {leaving ? (
-            <ActivityIndicator color="red" />
-          ) : (
-            <Text style={styles.leaveText}>Leave Chat</Text>
-          )}
+        {/* Leave Button */}
+        <TouchableOpacity style={styles.leaveButton}>
+          <Text style={styles.leaveText}>Leave</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -216,109 +134,55 @@ function makeStyles(colors: Colors) {
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
-    headerRight: {
-      width: 32,
-      alignItems: "flex-end",
-    },
     back: {
       fontSize: 22,
       color: colors.text,
     },
-    close: {
-      fontSize: 18,
-      color: colors.text,
-    },
     title: {
+      fontSize: 18,
+      fontWeight: "600",
       flex: 1,
-      fontSize: 17,
-      fontWeight: "600",
-      color: colors.text,
       textAlign: "center",
-      paddingHorizontal: 8,
-    },
-    scrollContent: {
-      padding: 20,
-      paddingBottom: 32,
-    },
-    section: {
-      marginTop: 20,
-      marginBottom: 8,
-      fontWeight: "600",
+      paddingHorizontal: 12,
       color: colors.text,
     },
-    sectionFirst: {
-      marginTop: 10,
+    content: {
+      padding: 16,
     },
     card: {
       borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
-      overflow: "hidden",
+      padding: 12,
+      marginBottom: 16,
       backgroundColor: colors.card,
     },
-    detailRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 13,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.separator,
-    },
-    detailRowLast: {
-      borderBottomWidth: 0,
-    },
-    innerSectionTitle: {
+    sectionTitle: {
       fontWeight: "600",
       fontSize: 16,
+      marginBottom: 10,
       color: colors.text,
-      paddingHorizontal: 13,
-      paddingTop: 12,
-      paddingBottom: 8,
-    },
-    overviewPlaceholder: {
-      height: 100,
-      marginHorizontal: 13,
-      marginBottom: 12,
-      backgroundColor: colors.inputBg,
-      borderRadius: 8,
     },
     row: {
       flexDirection: "row",
       justifyContent: "space-between",
-      alignItems: "center",
-      padding: 13,
+      paddingVertical: 10,
       borderBottomWidth: 1,
       borderBottomColor: colors.separator,
     },
-    lastRow: {
-      borderBottomWidth: 0,
-    },
-    rowText: {
-      fontSize: 16,
-      color: colors.text,
-    },
-    chevron: {
-      fontSize: 18,
-      color: colors.mutedText,
-    },
     label: {
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: "500",
       color: colors.text,
     },
     value: {
-      fontSize: 16,
+      fontSize: 14,
       color: colors.subtext,
-      marginLeft: 12,
-      flexShrink: 1,
-      textAlign: "right",
     },
     memberRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 13,
-      paddingVertical: 12,
+      paddingVertical: 10,
       borderBottomWidth: 1,
       borderBottomColor: colors.separator,
     },
@@ -326,30 +190,21 @@ function makeStyles(colors: Colors) {
       width: 36,
       height: 36,
       backgroundColor: colors.avatarBg,
-      borderRadius: 18,
+      borderRadius: 8,
       marginRight: 12,
     },
     memberName: {
-      fontSize: 16,
+      fontSize: 14,
       color: colors.text,
       flex: 1,
     },
-    memberCourses: {
-      fontSize: 13,
-      color: colors.mutedText,
-    },
     leaveButton: {
-      marginTop: 24,
       borderWidth: 1,
       borderColor: "red",
       borderRadius: 14,
       paddingVertical: 14,
       alignItems: "center",
-      justifyContent: "center",
-      minHeight: 48,
-    },
-    leaveButtonDisabled: {
-      opacity: 0.55,
+      marginBottom: 20,
     },
     leaveText: {
       fontSize: 16,

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import User from '../../models/User.js';
 import Chat from '../../models/Chat.js';
 import Course from '../../models/Course.js';
+import Message from '../../models/Message.js';
 import { devAuth } from '../middleware/devAuth.js';
 
 const router = Router();
@@ -126,6 +127,54 @@ router.put('/me/courses', devAuth, async (req, res) => {
   } catch (err) {
     console.error('PUT /api/users/me/courses error:', err);
     res.status(500).json({ error: 'Failed to update courses' });
+  }
+});
+
+// GET /api/users/me/stats
+router.get('/me/stats', devAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findById(userId).lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const [chatCount, messageCount] = await Promise.all([
+      Chat.countDocuments({ members: userId }),
+      Message.countDocuments({ senderId: userId }),
+    ]);
+
+    return res.json({
+      courseCount: user.courses.length,
+      chatCount,
+      messageCount,
+    });
+  } catch (err) {
+    console.error('GET /api/users/me/stats error:', err);
+    return res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// PUT /api/users/me/notifications
+router.put('/me/notifications', devAuth, async (req, res) => {
+  try {
+    const { notifEnabled, classNotif, replyNotif } = req.body;
+
+    const update = {};
+    if (typeof notifEnabled === 'boolean') update.notifEnabled = notifEnabled;
+    if (typeof classNotif === 'boolean') update.classNotif = classNotif;
+    if (typeof replyNotif === 'boolean') update.replyNotif = replyNotif;
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided' });
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+      .select('notifEnabled classNotif replyNotif')
+      .lean();
+
+    return res.json(user);
+  } catch (err) {
+    console.error('PUT /api/users/me/notifications error:', err);
+    return res.status(500).json({ error: 'Failed to update notification preferences' });
   }
 });
 

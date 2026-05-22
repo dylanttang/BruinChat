@@ -5,6 +5,7 @@ import Chat from '../../models/Chat.js';
 import Course from '../../models/Course.js';
 import Message from '../../models/Message.js';
 import { devAuth } from '../middleware/devAuth.js';
+import { authRateLimit, enrollmentRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ const router = Router();
 //
 // TEMPORARY: Remove this once Google OAuth is implemented.
 // ---------------------------------------------------------------------------
-router.get('/dev-list', async (req, res) => {
+router.get('/dev-list', authRateLimit, async (req, res) => {
   try {
     const users = await User.find({}, '_id displayName username')
       .sort({ displayName: 1 })
@@ -56,7 +57,7 @@ router.get('/me', devAuth, async (req, res) => {
 //
 // Response: { user: User }  (with populated courses)
 // ---------------------------------------------------------------------------
-router.put('/me/courses', devAuth, async (req, res) => {
+router.put('/me/courses', devAuth, enrollmentRateLimit, async (req, res) => {
   try {
     const { courseIds } = req.body;
 

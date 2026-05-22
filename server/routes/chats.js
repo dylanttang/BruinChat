@@ -5,6 +5,7 @@ import Message from '../../models/Message.js';
 import User from '../../models/User.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { sendPush } from '../utils/push.js';
+import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
@@ -254,7 +255,7 @@ router.get('/:id/messages', devAuth, async (req, res) => {
 //
 // Response: 201 { message: {...} }
 // ---------------------------------------------------------------------------
-router.post('/:id/messages', devAuth, async (req, res) => {
+router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => {
   try {
     if (req.user.bannedAt) {
       return res.status(403).json({ error: 'Your account has been banned' });
@@ -350,7 +351,7 @@ router.post('/:id/messages', devAuth, async (req, res) => {
 //
 // Response: { message: {...} }
 // ---------------------------------------------------------------------------
-router.post('/:chatId/messages/:id/react', devAuth, async (req, res) => {
+router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (req, res) => {
   try {
     if (req.user.bannedAt) {
       return res.status(403).json({ error: 'Your account has been banned' });

@@ -12,6 +12,7 @@ import adminRoutes from './routes/admin.js';
 import uploadRoutes from './routes/upload.js';
 import feedbackRoutes from './routes/feedback.js';
 import authRoutes from './routes/auth.js';
+import { globalRateLimit } from './middleware/rateLimit.js';
 
 dotenv.config();
 
@@ -25,6 +26,11 @@ const io = new Server(httpServer, {
   }
 });
 
+// Trust the first proxy in front of us (load balancer / cloud host) so
+// req.ip reflects the real client IP. Without this, all requests appear to
+// come from the proxy and share one rate-limit bucket.
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -34,6 +40,11 @@ app.use((req, res, next) => {
   req.io = io;
   next();
 });
+
+// Global rate limit on all /api/* routes. Keyed by IP (req.user isn't set
+// yet at this point in the middleware chain). Per-route limiters below do
+// the user-keyed limiting.
+app.use('/api', globalRateLimit);
 
 // Socket.io connection handling
 io.on('connection', (socket) => {

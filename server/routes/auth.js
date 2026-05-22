@@ -2,6 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import User from '../../models/User.js';
+import { authRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 const googleClient = new OAuth2Client();
@@ -35,7 +36,7 @@ function usernameFromEmail(email) {
   return email.split('@')[0].toLowerCase();
 }
 
-router.post('/google', async (req, res) => {
+router.post('/google', authRateLimit, async (req, res) => {
   try {
     if (!process.env.JWT_SECRET) {
       return res.status(500).json({ error: 'JWT auth is not configured' });

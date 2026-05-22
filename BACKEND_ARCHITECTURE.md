@@ -1,201 +1,370 @@
 # BruinChat Backend Architecture
 
-> Backend architecture for team review. Covers the tech stack, authentication approach, data models, API endpoints, and class data pipeline.
-
----
-
-## What's Working Right Now
-
-- **Database:** MongoDB Atlas connected, 3,832 Winter 2026 courses loaded
-- **`GET /api/courses`** — returns all courses from the database. The course picker screen (step3.tsx) fetches from this endpoint and lets users search/add courses.
-- **Course picker:** supports common abbreviations (CS → COM SCI, EE → EC ENGR, etc.), spaceless search (CS32 works), and an 8-course limit
-- **Dev bypass:** "Skip (Dev)" button on the sign-in screen to get into the app while Google OAuth isn't set up yet
+Living reference for how the backend works: tech stack, auth, data models, API endpoints, real-time messaging, and the class data pipeline. Update this when you ship something architecturally significant.
 
 ---
 
 ## Tech Stack
 
-Already in place:
+### Server (`server/`)
 
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Runtime | Node.js | |
-| Framework | Express | ^4.18.2 |
-| Database | MongoDB Atlas via Mongoose | ^8.0.0 |
-| Client | React Native + Expo | Expo SDK 54 |
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Runtime | Node.js (ESM, `"type": "module"`) | |
+| Framework | Express ^4 | |
+| Database | MongoDB Atlas via Mongoose ^8 | |
+| Real-time | Socket.io ^4 | Rooms per chat ID |
+| Auth | `google-auth-library` + `jsonwebtoken` | Google ID token → app JWT |
+| Push | `expo-server-sdk` | Fire-and-forget Expo push |
+| Media | Cloudinary (signed uploads) | Server signs, client uploads direct to Cloudinary |
+| Rate limiting | `rate-limiter-flexible` | In-memory; move to Redis when we scale |
+| HTML scraping | `cheerio` | For UCLA SOC course ingest |
 
-To add during implementation:
+### Client (`client/`)
 
-| Package | Purpose |
-|---------|---------|
-| `jose` | JWT creation/verification (ESM-native — works with our `"type": "module"` setup) |
-| `google-auth-library` | Verifying Google ID tokens (Google's official Node.js library) |
-
-> **Note:** Most tutorials use `jsonwebtoken` instead of `jose`. Same concept, just different import names. `jose` is the modern replacement that works natively with ESM imports.
+| Layer | Technology |
+|-------|-----------|
+| Framework | React Native + Expo SDK 54 |
+| Routing | `expo-router` |
+| Auth flow | `expo-auth-session/providers/google` + `expo-web-browser` |
+| Storage | `@react-native-async-storage/async-storage` |
+| Real-time | `socket.io-client` |
+| Media | `expo-image-picker` + Cloudinary direct upload |
+| Theming | Custom `ThemeContext` (light/dark/system) |
 
 ---
 
 ## Authentication
 
-**Approach:** Google OAuth 2.0, restricted to `@ucla.edu` emails.
+**Approach:** Google OAuth 2.0 ID token flow, restricted to `@ucla.edu` and `@g.ucla.edu` emails.
 
-### How it works
+### Flow
 
-1. User taps "Sign in with Google" in the app
-2. Google returns an ID token to the client
-3. Client sends the ID token to our backend (`POST /api/auth/google`)
-4. Backend verifies the token with Google, checks for `@ucla.edu` email
-5. Backend creates or finds the user, returns a JWT
-6. Client includes the JWT on all future requests (`Authorization: Bearer <token>`)
+1. User taps **Sign in with Google** on `welcome/welcome.tsx`
+2. `expo-auth-session/providers/google` opens the native Google sign-in
+3. Google returns an **ID token** to the client (not an access token — we don't need Google APIs)
+4. Client `POST /api/auth/google` with `{ idToken }`
+5. Server (`routes/auth.js`):
+   - Verifies the ID token via `google-auth-library` against our web/iOS/Android client IDs
+   - Confirms `email_verified` is true
+   - Checks the email matches `/^[a-zA-Z0-9._%+-]+@(g\.)?ucla\.edu$/`
+   - Upserts a User document (matched by `googleId`, `email`, or `username`)
+   - Returns `{ token, user }` where `token` is an HS256 JWT with `sub` = user ID, `role` = user role, 7-day expiry
+6. Client stores the JWT in AsyncStorage and sends it as `Authorization: Bearer <token>` on every subsequent request
 
-### Client library — needs team decision
+### Middleware contract (`server/middleware/devAuth.js`)
 
-| Library | Pros | Cons |
-|---------|------|------|
-| `expo-auth-session` | Works in Expo Go (our current setup) | Opens a web browser instead of native Google UI |
-| `@react-native-google-signin/google-signin` | Native Google sign-in UI | Does **not** work in Expo Go — requires custom dev builds |
+The same middleware handles **both** real auth and dev auth:
 
-We currently use Expo Go for development (`npm run client` → scan QR code). That means `expo-auth-session` is the realistic option for now. Either way, the backend doesn't care — both produce the same Google ID token.
+- If `Authorization: Bearer <JWT>` is present → verify JWT, look up user, set `req.user`
+- Else if `x-user-id: <ObjectId>` is present → look up that user, set `req.user` (dev-only path)
+- Else → 401
 
-### Backend verification
+This means the dev-user picker still works for local development without breaking real auth. The temporary fallback should be removed once OAuth has been live in production for a while (the `GET /api/users/dev-list` endpoint will also need to go).
 
-Using `google-auth-library`:
-```js
-import { OAuth2Client } from 'google-auth-library';
-const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+### Admin auth (`server/middleware/adminAuth.js`)
 
-const ticket = await client.verifyIdToken({
-  idToken: tokenFromClient,
-  audience: GOOGLE_CLIENT_ID,
-});
-const { sub, email, name, picture } = ticket.getPayload();
-// sub = Google user ID, email = their @ucla.edu address
-```
+Wraps `devAuth`, then requires `req.user.role === 'admin'`. Used on `/api/admin/*` routes.
 
 ---
 
 ## Data Models
 
-### Course (`models/Course.js`) — NEW
+All models live in `/models/`.
 
-This is the model for UCLA classes, populated by scraping the Schedule of Classes (see Class Data Pipeline below).
+### User (`models/User.js`)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `username` | String, required, unique, lowercase | Derived from email prefix on first OAuth sign-in |
+| `displayName` | String, required | From Google's `name` claim, editable |
+| `avatarUrl` | String | Cloudinary URL after upload, or Google profile pic on signup |
+| `googleId` | String | Google's `sub` claim — primary OAuth identity link |
+| `email` | String, lowercase | UCLA email |
+| `emailVerified` | Boolean | Set true after successful Google verification |
+| `role` | String enum (`user`/`admin`) | Default `user` |
+| `bannedAt` | Date | Non-null = user is banned (blocked from sending messages) |
+| `courses` | [ObjectId] ref Course | Classes the user is enrolled in |
+| `pushToken` | String | Expo push token |
+| `notifEnabled`, `classNotif`, `replyNotif` | Boolean | User notification preferences (default true) |
+| `year`, `major`, `goal` | String | From onboarding questionnaire |
+
+### Chat (`models/Chat.js`)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | String, required | |
+| `isGroup` | Boolean, default true | |
+| `members` | [ObjectId] ref User | |
+| `createdBy` | ObjectId ref User | |
+| `lastMessageAt` | Date | Used for sorting; updated by message send |
+| `archivedBy` | [ObjectId] ref User | Per-user archive (user-scoped, not global) |
+| `course` | ObjectId ref Course | Optional — present on auto-created course chats |
+
+**Indexes:** `members`, `(lastMessageAt, _id)`, partial unique on `course` (one chat per course).
+
+### Message (`models/Message.js`)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `chatId` | ObjectId ref Chat, indexed | |
+| `senderId` | ObjectId ref User, indexed | |
+| `text` | String | |
+| `mediaUrl` | String | Cloudinary URL if message has an image |
+| `replyTo` | ObjectId ref Message | Optional — message being replied to |
+| `reactions` | Array of `{ emoji, userId, createdAt }` | Emoji reactions |
+| `editedAt` | Date | Non-null = edited |
+| `deletedAt` | Date | Non-null = soft-deleted |
+
+**Index:** `(chatId, createdAt DESC)` for fast cursor pagination.
+
+### Course (`models/Course.js`)
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `subjectArea` | String, required | e.g. `"COM SCI"` |
-| `number` | String, required | e.g. `"32"`, `"M51B"`, `"35L"` |
-| `title` | String, required | e.g. `"Introduction to Computer Science II"` |
-| `description` | String | Default `""` — not available from SOC |
-| `units` | String | Default `""` — not available from SOC |
-| `term` | String, required | UCLA term code, e.g. `"26W"` (Winter 2026) |
+| `number` | String, required | e.g. `"35L"` |
+| `title` | String, required | e.g. `"Software Construction"` |
+| `description`, `units` | String | Empty — not extracted from SOC |
+| `term` | String, required | UCLA term code (`YYQ`, e.g. `"26S"`) |
 
-**Index:** `{ subjectArea, number, title, term }` — unique. Title is included because some courses share a number (e.g., FIAT LX 19 has 5 different seminars per quarter).
+**Index:** `(subjectArea, number, title, term)` — unique.
 
-### Proposed changes to existing models
+### Report (`models/Report.js`)
 
-**User** — add these fields:
 | Field | Type | Notes |
 |-------|------|-------|
-| `googleId` | String, required, unique | From Google OAuth |
-| `email` | String, required, unique | Must be `@ucla.edu` |
-| `courses` | [ObjectId] ref Course | Classes the user selected |
+| `reporterId` | ObjectId ref User | |
+| `targetType` | String enum (`user`/`message`) | |
+| `targetId` | ObjectId | Polymorphic — combine with `targetType` to resolve |
+| `reason` | String enum | `spam` / `harassment` / `inappropriate_content` / `hate_speech` / `other` |
+| `details` | String | Optional free text |
+| `status` | String enum | `pending` / `dismissed` / `warned` / `banned` |
+| `resolvedBy`, `resolvedAt`, `resolutionNote` | | Set when an admin handles the report |
 
-Existing fields (`username`, `displayName`, `avatarUrl`) stay as-is.
+**Index:** partial unique on `(reporterId, targetType, targetId)` where `status = pending` (prevents duplicate open reports).
 
-**Chat** — add one field:
+### Feedback (`models/Feedback.js`)
+
 | Field | Type | Notes |
 |-------|------|-------|
-| `course` | ObjectId ref Course | Links a group chat to a class |
-
-Existing fields stay as-is. The idea: when a user selects a course, we find or create a Chat linked to that course and add them as a member. One group chat per course per term.
-
-**Message** — no changes needed.
+| `userId` | ObjectId ref User | |
+| `text` | String, max 500 chars | |
 
 ---
 
-## Class Data Pipeline
+## Real-Time Messaging
 
-This is how we get UCLA's per-quarter course offerings into our database.
+Socket.io is mounted on the same HTTP server. CORS is currently `*` (locked down before production).
 
-### Source
+### Client → Server events
+- `joinChat(chatId)` — subscribe to a chat's room
+- `leaveChat(chatId)` — unsubscribe
+- `typing({ chatId, isTyping })` — broadcast typing state
 
-UCLA Schedule of Classes (SOC) — scraped from `sa.ucla.edu`. No authentication required. Returns only courses actually offered in a given term (~3,800 per quarter), not the full catalog (~16K).
+### Server → Client events
+- `newMessage` — emitted to room when a message is sent
+- `messageEdited` — emitted when a message is edited
+- `messageDeleted` — emitted when a message is deleted
+- `messageReacted` — emitted when a reaction is added/removed
+- `typing` — broadcast typing state from another user
 
-### How the scraping works
+The server `req.io` middleware attaches the Socket.io instance to every request, so route handlers can emit events after persisting changes.
 
-The SOC uses an internal AJAX endpoint:
+### Known gap
+Socket.io handshake auth currently trusts the client-provided `userId` without verification. A future PR should verify this against the JWT.
 
-```
-GET https://sa.ucla.edu/ro/Public/SOC/Results/CourseTitlesView
-Headers: X-Requested-With: XMLHttpRequest
-Params: search_by, model (JSON), filterFlags, pageNumber
-```
+---
 
-Returns HTML fragments with course titles as buttons: `"35L - Software Construction"`. We parse these with `cheerio`.
+## Push Notifications
 
-- **Paginated** at 25 courses per page — script auto-paginates
-- **Subject areas** fetched dynamically from the SOC page (~190 per term)
-- **Term codes:** `YYQ` format — e.g., `26W` = Winter 2026, `26S` = Spring 2026
+Uses `expo-server-sdk`. The dispatcher (`server/utils/push.js`) is fire-and-forget — it chunks tokens, sends batches, and silently logs errors. Push fires whenever a message is sent to a chat where the recipient has a `pushToken` set and notifications enabled (respects `notifEnabled`, `classNotif`, `replyNotif`).
 
-### How we ingest it
+The client registers its Expo push token via `PUT /api/users/me/push-token` on sign-in.
 
-Script at `scripts/fetchCourses.js`:
+---
 
-1. Fetches the SOC page to get the subject area list for the term
-2. For each subject area, hits `CourseTitlesView` with pagination
-3. Parses HTML with cheerio to extract course number and title
-4. Upserts into MongoDB (safe to re-run — won't create duplicates)
+## Image & File Upload (Cloudinary)
 
-```bash
-# Dry run (no DB writes)
-NODE_PATH=server/node_modules node scripts/fetchCourses.js --term 26W --dry-run
+Direct upload pattern (no images touch our server):
 
-# Real run
-NODE_PATH=server/node_modules node scripts/fetchCourses.js --term 26W
-```
+1. Client calls `GET /api/upload/signature?folder=avatars` (or `messages`)
+2. Server (`routes/upload.js`) signs a Cloudinary upload request with our `CLOUDINARY_API_SECRET`
+3. Server returns `{ signature, timestamp, apiKey, cloudName, folder }`
+4. Client (`lib/cloudinary.ts`) POSTs the image directly to Cloudinary with that signature
+5. Cloudinary returns the hosted URL
+6. Client sends the URL to `PUT /api/users/me/avatar` (for avatars) or includes it in a message body
 
-### Why SOC scraping, not the catalog API?
+**Client-side limit:** 5 MB per file.
 
-We originally planned to use the public catalog API (`api.ucla.edu/sis/publicapis/...`), but testing revealed it returns the **entire catalog** (~16K courses across all terms) — not per-quarter offerings. For example, COM SCI returned 180 cataloged courses but only ~55 are offered any given quarter. SOC scraping gives us exactly what students need.
+**Server-side validation:** `avatarUrl` must start with `https://res.cloudinary.com/`.
 
-### Update frequency
+---
 
-Once per quarter. Run the script before each quarter starts with the new term code.
+## Rate Limiting
 
-### ⚠️ SOC Bot Protection (March 2026)
+`rate-limiter-flexible` with in-memory storage. Applied as middleware to specific endpoints. See `server/middleware/rateLimit.js`.
 
-As of March 2026, the SOC endpoint may return an F5 load balancer challenge instead of course HTML. The scraper last ran successfully in February 2026. We'll need to investigate a workaround before loading Spring 2026 courses. The existing Winter 2026 data (3,832 courses) in the database is unaffected.
+| Limiter | Scope | Limit |
+|---------|-------|-------|
+| Global | All `/api/*` | 300 req / min per IP |
+| Auth | `/api/auth/*`, `/api/users/dev-list` | 10 / 15 min per IP |
+| Message send | `POST /api/chats/:id/messages` | 10/10s burst + 60/min sustained per user |
+| Reactions | `POST /api/chats/:chatId/messages/:id/react` | 30 / min per user |
+| Reports | `POST /api/reports` | 5 / hour per user |
+| Feedback | `POST /api/feedback` | 5 / hour per user |
+| Uploads | `GET /api/upload/signature` | 10 / hour per user |
+| Enrollment | `PUT /api/users/me/courses` | 20 / hour per user |
+
+**Shadow mode:** Set `RATE_LIMIT_SHADOW=true` to log would-be blocks without enforcing.
+
+**`trust proxy = 1`** is set in `server/index.js` so `req.ip` resolves to the real client behind a load balancer.
 
 ---
 
 ## API Endpoints
 
-### Working
+All `/api/*` endpoints require auth via `devAuth` (Bearer JWT or `x-user-id` header) unless noted.
 
-| Method | URL | Auth? | Description |
-|--------|-----|-------|-------------|
-| `GET` | `/api/courses` | No | Returns all courses in the database. Response: `{ courses: [{ _id, subjectArea, number, title }] }` |
-| `GET` | `/api/health` | No | Health check — returns server status and MongoDB connection state |
+### Auth
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/auth/google` | No | Exchange Google ID token for app JWT |
 
-### Still Needed
+### Health
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/health` | No | Server + MongoDB health |
 
-| Method | URL | Description | Notes |
-|--------|-----|-------------|-------|
-| `POST` | `/api/auth/google` | Exchange Google ID token for a JWT | Blocked until Google Cloud project is set up |
-| `GET` | `/api/users/me` | Get the current user's profile + courses | Needs auth middleware |
-| `PUT` | `/api/users/me/courses` | Save user's selected courses, auto-create/join group chats | Most complex endpoint — see model changes below |
-| `GET` | `/api/chats` | List user's group chats | Needs auth middleware |
-| `GET` | `/api/chats/:id/messages` | Get messages in a chat (paginated) | Needs auth middleware |
-| `POST` | `/api/chats/:id/messages` | Send a message | Needs auth middleware |
+### Courses
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/courses` | No | List all courses (optional `?term=`) |
+
+### Users
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/users/dev-list` | No | List all users (**dev-only**, remove with OAuth full launch) |
+| `GET` | `/api/users/me` | Yes | Current user, with populated courses |
+| `PUT` | `/api/users/me/courses` | Yes | Replace enrolled courses + auto-join/leave chats |
+| `PUT` | `/api/users/me/profile` | Yes | Update year/major/goal |
+| `PUT` | `/api/users/me/notifications` | Yes | Update notification prefs |
+| `PUT` | `/api/users/me/push-token` | Yes | Register Expo push token |
+| `PUT` | `/api/users/me/avatar` | Yes | Save Cloudinary avatar URL |
+| `GET` | `/api/users/me/stats` | Yes | `{ courseCount, chatCount, messageCount }` |
+
+### Chats
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/chats` | Yes | List current user's non-archived chats (cursor paginated) |
+| `GET` | `/api/chats/archived` | Yes | List archived chats |
+| `PUT` | `/api/chats/:id/archive` | Yes | Toggle archive status for current user |
+| `GET` | `/api/chats/:id` | Yes | Single chat (populated members + course) |
+| `GET` | `/api/chats/:id/messages` | Yes | Messages in chat (cursor paginated, `?before=`, `?limit=`) |
+| `POST` | `/api/chats/:id/messages` | Yes | Send a message |
+| `PUT` | `/api/chats/:chatId/messages/:id` | Yes | Edit a message (sender only) |
+| `DELETE` | `/api/chats/:chatId/messages/:id` | Yes | Soft-delete a message (sender only) |
+| `POST` | `/api/chats/:chatId/messages/:id/react` | Yes | Toggle emoji reaction |
+| `DELETE` | `/api/chats/:id/members/me` | Yes | Leave a chat |
+
+### Reports
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/reports/me` | Yes | Current user's submitted reports |
+| `POST` | `/api/reports` | Yes | Submit a report (user or message) |
+
+### Admin
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/admin/reports` | Admin | List all reports |
+| `POST` | `/api/admin/users/:id/ban` | Admin | Ban a user |
+| `POST` | `/api/admin/users/:id/unban` | Admin | Unban a user |
+
+### Feedback
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/feedback` | Yes | Submit feedback (max 500 chars) |
+
+### Upload
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/upload/signature` | Yes | Cloudinary signed upload params (`?folder=avatars\|messages`) |
 
 ---
 
-## Open Questions
+## Class Data Pipeline
 
-These need team input before we implement:
+How UCLA course offerings get into MongoDB.
 
-- **Real-time messaging** — REST polling works for MVP, but we'll need WebSockets (likely Socket.io) for instant message delivery. Needs its own design.
-- **DMs** — Just group chats, or also direct messages between users?
-- **Leaving chats** — Can users leave a class chat without deselecting the course?
-- **Push notifications** — Needed for MVP?
-- **Old quarter chats** — Archive, delete, or keep read-only?
+### Source
+
+UCLA Schedule of Classes (SOC), scraped from `sa.ucla.edu/ro/Public/SOC`. Returns only courses actually offered in a given term (~3,800 per quarter), not the full ~16K catalog.
+
+### Scraper
+
+`scripts/fetchCourses.js`:
+
+1. Fetches the SOC results page for one subject area to extract the dropdown of all subject areas for that term
+2. For each subject area, hits `CourseTitlesView?...` with pagination (25/page)
+3. Parses HTML with `cheerio` to extract course number + title
+4. Upserts into MongoDB (safe to re-run)
+
+```bash
+NODE_PATH=server/node_modules node scripts/fetchCourses.js --term 26S --dry-run
+NODE_PATH=server/node_modules node scripts/fetchCourses.js --term 26S
+```
+
+Term codes use `YYQ` format: `26W` = Winter 2026, `26S` = Spring 2026, `26F` = Fall 2026.
+
+### Update frequency
+
+Once per quarter. Run before the quarter begins.
+
+### ⚠️ SOC bot protection
+
+In March 2026 we hit an F5 load-balancer challenge that returned a JavaScript shim instead of course HTML. The scraper succeeded for Spring 2026 (April), but the issue may recur. If the scraper starts failing with truncated output, investigate user-agent / cookie / IP rate issues. Worst case fallback is the public catalog API (`api.ucla.edu/sis/publicapis/...`) which returns the full catalog and would need filtering.
+
+---
+
+## Environment Variables
+
+See `server/.env.example` and `client/.env.example` for the canonical list. Briefly:
+
+**Server**
+- `PORT`, `MONGODB_URI`, `MONGODB_DB`
+- `JWT_SECRET`, `JWT_EXPIRES_IN`
+- `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID`
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- `RATE_LIMIT_SHADOW` (optional, `true` to log without enforcing)
+
+**Client**
+- `EXPO_PUBLIC_API_URL`
+- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
+
+---
+
+## Known Gaps & Pending Work
+
+Things deliberately not built yet, in roughly priority order:
+
+- **Socket.io auth verification** — handshake currently trusts client-provided `userId`. Should verify the JWT.
+- **CORS lockdown** — Express and Socket.io both allow `*` origin. Lock to the production client origin before launch.
+- **Structured logging + error tracking** — Sentry or similar. Currently using `console.error` only.
+- **Account deletion / data export** — no endpoint to delete a user account or export their data.
+- **Soft-delete cleanup job** — deleted messages and abandoned course chats accumulate indefinitely.
+- **Redis-backed rate limiter** — in-memory works for one server; need Redis for horizontal scaling.
+- **Admin panel UI** — `/api/admin/*` endpoints exist but there's no UI to call them. Admins moderate via direct API calls.
+- **Tests / CI** — none yet.
+
+---
+
+## Decision Log
+
+Significant decisions that shaped the architecture, dated:
+
+- **2026-02** Used SOC scraping over the public catalog API (per-quarter offerings vs full catalog of ~16K)
+- **2026-04** Adopted dev-auth scaffolding so team could ship features in parallel before real OAuth
+- **2026-04** Chose Socket.io over WebSocket + polling for real-time messaging
+- **2026-05** Chose Cloudinary signed direct-upload over local disk / S3
+- **2026-05** Chose `jsonwebtoken` over `jose` (CJS but works fine in our ESM setup; ecosystem familiarity won)
+- **2026-05** Chose `rate-limiter-flexible` over `express-rate-limit` (better algorithms, Redis-ready)

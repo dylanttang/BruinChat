@@ -4,6 +4,7 @@ import Report from '../../models/Report.js';
 import User from '../../models/User.js';
 import Message from '../../models/Message.js';
 import { devAuth } from '../middleware/devAuth.js';
+import { reportRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ router.get('/me', devAuth, async (req, res) => {
   }
 });
 
-router.post('/', devAuth, async (req, res) => {
+router.post('/', devAuth, reportRateLimit, async (req, res) => {
   try {
     const { targetType, targetId, reason, details } = req.body;
 

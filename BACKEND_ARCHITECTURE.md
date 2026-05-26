@@ -89,6 +89,8 @@ All models live in `/models/`.
 | `notifEnabled`, `classNotif`, `replyNotif` | Boolean | User notification preferences (default true) |
 | `year`, `major`, `goal` | String | From onboarding questionnaire |
 
+**Indexes:** `username` (unique), `email` (sparse unique), `googleId` (sparse unique). Sparse indexes mean the dev-picker users (no email/googleId) don't conflict.
+
 ### Chat (`models/Chat.js`)
 
 | Field | Type | Notes |
@@ -101,7 +103,7 @@ All models live in `/models/`.
 | `archivedBy` | [ObjectId] ref User | Per-user archive (user-scoped, not global) |
 | `course` | ObjectId ref Course | Optional — present on auto-created course chats |
 
-**Indexes:** `members`, `(lastMessageAt, _id)`, partial unique on `course` (one chat per course).
+**Indexes:** `members`, `(lastMessageAt: -1, _id: -1)` (both descending for cursor pagination), partial unique on `course` with `partialFilterExpression: { course: { $exists: true } }` so non-course chats don't conflict.
 
 ### Message (`models/Message.js`)
 
@@ -112,7 +114,7 @@ All models live in `/models/`.
 | `text` | String | |
 | `mediaUrl` | String | Cloudinary URL if message has an image |
 | `replyTo` | ObjectId ref Message | Optional — message being replied to |
-| `reactions` | Array of `{ emoji, userId, createdAt }` | Emoji reactions |
+| `reactions` | Array of `{ emoji, userId, createdAt }` | Emoji reactions; `emoji` capped at 16 chars |
 | `editedAt` | Date | Non-null = edited |
 | `deletedAt` | Date | Non-null = soft-deleted |
 
@@ -276,7 +278,8 @@ All `/api/*` endpoints require auth via `devAuth` (Bearer JWT or `x-user-id` hea
 ### Admin
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/admin/reports` | Admin | List all reports |
+| `GET` | `/api/admin/reports` | Admin | List all reports (filter by `?status=` and `?targetType=`) |
+| `PATCH` | `/api/admin/reports/:id` | Admin | Resolve a report (`dismissed` / `warned` / `banned`) |
 | `POST` | `/api/admin/users/:id/ban` | Admin | Ban a user |
 | `POST` | `/api/admin/users/:id/unban` | Admin | Unban a user |
 
@@ -331,11 +334,13 @@ In March 2026 we hit an F5 load-balancer challenge that returned a JavaScript sh
 See `server/.env.example` and `client/.env.example` for the canonical list. Briefly:
 
 **Server**
-- `PORT`, `MONGODB_URI`, `MONGODB_DB`
-- `JWT_SECRET`, `JWT_EXPIRES_IN`
-- `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID`
-- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
-- `RATE_LIMIT_SHADOW` (optional, `true` to log without enforcing)
+- `PORT` (default 3000)
+- `MONGODB_URI` (required), `MONGODB_DB` (optional — overrides the DB name from the URI)
+- `JWT_SECRET` (required), `JWT_EXPIRES_IN` (default `7d`)
+- `GOOGLE_WEB_CLIENT_ID` (required), `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID` (at least one required)
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (all required for uploads to work)
+- `SERVER_PUBLIC_URL` (optional — only used in server startup logs for mobile testing)
+- `RATE_LIMIT_SHADOW` (optional — set to `true` to log rate-limit blocks without actually 429-ing anyone)
 
 **Client**
 - `EXPO_PUBLIC_API_URL`

@@ -35,6 +35,9 @@ router.post('/', devAuth, reportRateLimit, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(targetId)) {
       return res.status(400).json({ error: 'Invalid targetId' });
     }
+    if (details != null && (typeof details !== 'string' || details.length > 500)) {
+      return res.status(400).json({ error: 'details must be a string of at most 500 characters' });
+    }
 
     const TargetModel = targetType === 'user' ? User : Message;
     const target = await TargetModel.findById(targetId).lean();
@@ -56,7 +59,10 @@ router.post('/', devAuth, reportRateLimit, async (req, res) => {
     if (err.code === 11000) {
       return res.status(409).json({ error: 'You already have an open report for this target' });
     }
-    throw err;
+    // Express 4 doesn't catch rejected promises, so a rethrow here would
+    // leave the request hanging.
+    console.error('POST /api/reports error:', err);
+    return res.status(500).json({ error: 'Failed to submit report' });
   }
 });
 

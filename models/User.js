@@ -23,6 +23,12 @@ const userSchema = new mongoose.Schema(
     // termsVersion is compared against CURRENT_TERMS_VERSION on the server.
     termsAcceptedAt: { type: Date, default: null },
     termsVersion: { type: String, default: null },
+    // Users this user has blocked. Their messages are hidden from this user
+    // and they don't trigger push notifications for this user.
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // Set when the account is deleted. The document stays as a tombstone
+    // ("Deleted user", no personal data) so old messages still resolve.
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

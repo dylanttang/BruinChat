@@ -4,12 +4,12 @@ import mongoose from 'mongoose';
 import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
 import Chat from '../../models/Chat.js';
 import Message from '../../models/Message.js';
 import User from '../../models/User.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { sendPush } from '../utils/push.js';
+import { deleteMessageMediaFiles, uploadDir } from '../utils/media.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
 import { hasAcceptedTerms, TERMS_REQUIRED_ERROR } from '../utils/terms.js';
 
@@ -17,8 +17,6 @@ const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
 const CHAT_LIST_MAX_LIMIT = 50;
 const MAX_REACTION_LENGTH = 16;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadDir = path.join(__dirname, '..', 'uploads', 'chat-photos');
 const MAX_MEDIA_SIZE = 10 * 1024 * 1024;
 const allowedMediaTypes = new Map([
   'image/jpeg',
@@ -101,14 +99,6 @@ function deleteUploadedFiles(files = []) {
   }
 }
 
-function deleteMessageMediaFiles(message) {
-  const urls = [...(message.mediaUrls || []), message.mediaUrl].filter(Boolean);
-  for (const url of urls) {
-    if (!url.startsWith('/uploads/chat-photos/')) continue;
-    const filename = path.basename(url);
-    fs.unlink(path.join(uploadDir, filename), () => {});
-  }
-}
 
 async function requireChatMember(chatId, userId) {
   if (!mongoose.Types.ObjectId.isValid(chatId)) {
@@ -183,7 +173,7 @@ router.get('/', devAuth, async (req, res) => {
     // Attach the most recent message text to each chat
     const chatIds = chats.map((c) => c._id);
     const latestMessages = await Message.aggregate([
-      { $match: { chatId: { $in: chatIds } } },
+      { $match: { chatId: { $in: chatIds }, senderId: { $nin: req.user.blockedUsers || [] } } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
@@ -338,7 +328,8 @@ router.get('/:id/messages', devAuth, async (req, res) => {
 
     // Pagination
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
-    const query = { chatId };
+    // Hide messages from anyone the viewer has blocked.
+    const query = { chatId, senderId: { $nin: req.user.blockedUsers || [] } };
 
     if (req.query.before) {
       if (!mongoose.Types.ObjectId.isValid(req.query.before)) {
@@ -445,6 +436,7 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
       _id: { $in: chat.members, $ne: req.user._id },
       pushToken: { $ne: null },
       notifEnabled: true,
+      blockedUsers: { $ne: req.user._id },
     }).select('pushToken classNotif replyNotif _id').lean();
 
     if (recipients.length > 0) {

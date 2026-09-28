@@ -19,7 +19,7 @@ export async function devAuth(req, res, next) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       const user = await User.findById(payload.sub).lean();
-      if (!user) {
+      if (!user || user.deletedAt) {
         return res.status(401).json({ error: 'User not found' });
       }
 
@@ -38,7 +38,7 @@ export async function devAuth(req, res, next) {
 
   try {
     const user = await User.findById(userId).lean();
-    if (!user) {
+    if (!user || user.deletedAt) {
       return res.status(401).json({ error: 'User not found' });
     }
 

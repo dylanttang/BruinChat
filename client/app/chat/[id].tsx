@@ -19,9 +19,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
-import { apiFetch, getDevUserId } from "../../lib/api";
+import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { createSocket } from "../../lib/socket";
+import { ReportTarget, setUserBlocked } from "../../lib/moderation";
+import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
+import ReportModal from "../../components/ReportModal";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
@@ -212,15 +215,27 @@ export default function ChatScreen() {
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  // Socket handlers are registered once, so they read the latest block list
+  // through a ref instead of closing over stale state.
+  const blockedIdsRef = useRef<Set<string>>(new Set());
+  blockedIdsRef.current = blockedIds;
+  const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [userId, chatRes, msgsRes] = await Promise.all([
-        getDevUserId(),
+      const [meRes, chatRes, msgsRes] = await Promise.all([
+        apiFetch("/api/users/me"),
         apiFetch(`/api/chats/${id}`),
         apiFetch(`/api/chats/${id}/messages`),
       ]);
-      setCurrentUserId(userId);
+
+      if (meRes.ok) {
+        const data = await meRes.json();
+        setCurrentUserId(data.user._id);
+        setBlockedIds(new Set((data.user.blockedUsers ?? []).map(String)));
+      }
 
       if (chatRes.ok) {
         const data = await chatRes.json();
@@ -299,6 +314,7 @@ export default function ChatScreen() {
       if (socket.connected) joinChat();
 
       socket.on("newMessage", (incoming: Message) => {
+        if (blockedIdsRef.current.has(incoming.senderId?._id)) return;
         setMessages((prev) => upsertMessage(prev, incoming));
         if (incoming.senderId?._id) clearRemoteTypingUser(incoming.senderId._id);
       });
@@ -317,6 +333,7 @@ export default function ChatScreen() {
 
       socket.on("typing", ({ chatId, userId, isTyping }) => {
         if (chatId !== id || !userId || userId === currentUserId) return;
+        if (blockedIdsRef.current.has(userId)) return;
 
         if (!isTyping) {
           clearRemoteTypingUser(userId);
@@ -365,6 +382,45 @@ export default function ChatScreen() {
       console.error("Failed to react:", err);
     }
   }, [id]);
+
+  const handleBlockedChange = (userId: string, blocked: boolean) => {
+    setBlockedIds((prev) => {
+      const next = new Set(prev);
+      if (blocked) next.add(userId);
+      else next.delete(userId);
+      return next;
+    });
+    if (blocked && replyingTo?.senderId._id === userId) setReplyingTo(null);
+  };
+
+  const blockUser = (target: Message) => {
+    const { _id: userId, displayName } = target.senderId;
+    Alert.alert(
+      `Block ${displayName}?`,
+      "You won't see their messages or get notifications from them. They won't be told. You can unblock them in Settings.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await setUserBlocked(userId, true);
+              handleBlockedChange(userId, true);
+            } catch (err) {
+              console.error("Failed to block:", err);
+              Alert.alert("Couldn't block user", "Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const visibleMessages = useMemo(
+    () => messages.filter((msg) => !blockedIds.has(msg.senderId?._id)),
+    [messages, blockedIds]
+  );
 
   const typingLabel = useMemo(() => {
     const names = typingUserIds.map((userId) => (
@@ -519,7 +575,7 @@ export default function ChatScreen() {
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator color={colors.mutedText} />
         </View>
-      ) : messages.length === 0 ? (
+      ) : visibleMessages.length === 0 ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
           <Text style={styles.emptyText}>
             No messages yet. Say hi!
@@ -528,7 +584,7 @@ export default function ChatScreen() {
       ) : (
         <FlatList
           ref={listRef}
-          data={injectDateSeparators(messages)}
+          data={injectDateSeparators(visibleMessages)}
           inverted
           keyExtractor={(item) => item._id}
           contentContainerStyle={styles.list}
@@ -546,6 +602,7 @@ export default function ChatScreen() {
                 item={{
                   id: msg._id,
                   user: msg.senderId.displayName,
+                  avatarUrl: msg.senderId.avatarUrl,
                   text: msg.text,
                   mediaUrl: msg.mediaUrl ?? null,
                   mediaUrls: msg.mediaUrls,
@@ -557,6 +614,7 @@ export default function ChatScreen() {
                 }}
                 onLongPress={() => setActionTarget(msg)}
                 onReact={(emoji) => reactToMessage(msg._id, emoji)}
+                onPressUser={() => setProfileUser(msg.senderId)}
               />
             );
           }}
@@ -567,32 +625,59 @@ export default function ChatScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {actionTarget && (
           <View style={styles.actionBar}>
-            <View style={styles.actionEmojiRow}>
-              {REACTION_OPTIONS.map((emoji) => (
-                <TouchableOpacity
-                  key={emoji}
-                  style={styles.actionEmojiButton}
-                  onPress={() => {
-                    reactToMessage(actionTarget._id, emoji);
-                    setActionTarget(null);
-                  }}
-                >
-                  <Text style={styles.actionEmoji}>{emoji}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.actionTopRow}>
+              <View style={styles.actionEmojiRow}>
+                {REACTION_OPTIONS.map((emoji) => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={styles.actionEmojiButton}
+                    onPress={() => {
+                      reactToMessage(actionTarget._id, emoji);
+                      setActionTarget(null);
+                    }}
+                  >
+                    <Text style={styles.actionEmoji}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity style={styles.actionCloseButton} onPress={() => setActionTarget(null)}>
+                <Text style={styles.actionCloseText}>×</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.actionReplyButton}
-              onPress={() => {
-                setReplyingTo(actionTarget);
-                setActionTarget(null);
-              }}
-            >
-              <Text style={styles.actionReplyText}>Reply</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCloseButton} onPress={() => setActionTarget(null)}>
-              <Text style={styles.actionCloseText}>×</Text>
-            </TouchableOpacity>
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity
+                style={styles.actionReplyButton}
+                onPress={() => {
+                  setReplyingTo(actionTarget);
+                  setActionTarget(null);
+                }}
+              >
+                <Text style={styles.actionReplyText}>Reply</Text>
+              </TouchableOpacity>
+              {actionTarget.senderId._id !== currentUserId && (
+                <>
+                  <TouchableOpacity
+                    style={styles.actionReplyButton}
+                    onPress={() => {
+                      setReportTarget({ type: "message", id: actionTarget._id, name: actionTarget.senderId.displayName });
+                      setActionTarget(null);
+                    }}
+                  >
+                    <Text style={[styles.actionReplyText, { color: colors.danger }]}>Report</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionReplyButton}
+                    onPress={() => {
+                      const target = actionTarget;
+                      setActionTarget(null);
+                      blockUser(target);
+                    }}
+                  >
+                    <Text style={[styles.actionReplyText, { color: colors.danger }]}>Block</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           </View>
         )}
         {!!typingLabel && (
@@ -662,6 +747,14 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <UserProfileSheet
+        user={profileUser}
+        isBlocked={!!profileUser && blockedIds.has(profileUser._id)}
+        onClose={() => setProfileUser(null)}
+        onBlockedChange={handleBlockedChange}
+      />
+      <ReportModal target={reportTarget} onClose={() => setReportTarget(null)} />
     </SafeAreaView>
   );
 }
@@ -819,13 +912,20 @@ function makeStyles(colors: Colors) {
       color: colors.mutedText,
     },
     actionBar: {
-      flexDirection: "row",
-      alignItems: "center",
+      gap: 8,
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderTopWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.card,
+    },
+    actionTopRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    actionButtonsRow: {
+      flexDirection: "row",
+      gap: 8,
     },
     actionEmojiRow: {
       flexDirection: "row",
@@ -845,13 +945,13 @@ function makeStyles(colors: Colors) {
       fontSize: 16,
     },
     actionReplyButton: {
-      minHeight: 30,
+      flex: 1,
+      minHeight: 34,
       paddingHorizontal: 10,
-      borderRadius: 15,
+      borderRadius: 17,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.inputBg,
-      marginLeft: 4,
     },
     actionReplyText: {
       fontSize: 13,

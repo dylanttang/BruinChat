@@ -21,6 +21,7 @@ type Props = {
   item: {
     id: string;
     user: string;
+    avatarUrl?: string;
     text: string;
     mediaUrl?: string | null;
     mediaUrls?: string[];
@@ -32,6 +33,8 @@ type Props = {
   };
   onLongPress?: () => void;
   onReact?: (emoji: string) => void;
+  // Tapping the sender's picture or name opens their profile sheet.
+  onPressUser?: () => void;
 };
 
 function isVideoUrl(url: string) {
@@ -76,7 +79,7 @@ function VideoThumbnailTile({ uri, style }: { uri: string; style: any }) {
   );
 }
 
-export default function MessageBubble({ item, onLongPress, onReact }: Props) {
+export default function MessageBubble({ item, onLongPress, onReact, onPressUser }: Props) {
   const isMe = item.mine;
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -105,10 +108,18 @@ export default function MessageBubble({ item, onLongPress, onReact }: Props) {
         onLongPress={onLongPress}
         style={[styles.row, { justifyContent: isMe ? "flex-end" : "flex-start" }]}
       >
-        {!isMe && <View style={styles.avatar} />}
+        {!isMe && (
+          <TouchableOpacity onPress={onPressUser} disabled={!onPressUser} accessibilityLabel={`Open ${item.user}'s profile`}>
+            <Image source={item.avatarUrl ? { uri: item.avatarUrl } : undefined} style={styles.avatar} />
+          </TouchableOpacity>
+        )}
 
         <View style={{ maxWidth: "75%" }}>
-          {!isMe && <Text style={styles.username}>{item.user}</Text>}
+          {!isMe && (
+            <Text style={styles.username} onPress={onPressUser} suppressHighlighting>
+              {item.user}
+            </Text>
+          )}
 
           <LinearGradient
             colors={

@@ -85,6 +85,13 @@ router.post('/google', authRateLimit, async (req, res) => {
       ],
     });
 
+    // A deleted account only keeps its email/Google ID if it was banned
+    // (see DELETE /api/users/me), so a match here means a banned user trying
+    // to come back.
+    if (user?.deletedAt) {
+      return res.status(403).json({ error: 'This account has been banned' });
+    }
+
     if (!user) {
       user = new User({
         username,

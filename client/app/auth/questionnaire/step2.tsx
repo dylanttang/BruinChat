@@ -49,7 +49,7 @@ export default function Step2() {
           autoCapitalize="words"
         />
 
-        <Text style={styles.sectionLabel}>What do you want from BruinChat?</Text>
+        <Text style={styles.sectionLabel}>What do you want from BChat?</Text>
         <View style={styles.options}>
           {goals.map((goal) => {
             const selected = selectedGoal === goal;

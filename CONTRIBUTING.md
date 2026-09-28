@@ -1,4 +1,4 @@
-# BruinChat Git Workflow
+# BChat Git Workflow
 
 ## First Time Setup
 

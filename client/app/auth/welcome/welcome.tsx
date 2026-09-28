@@ -126,7 +126,7 @@ export default function Welcome() {
   return (
     <LinearGradient colors={colors.gradients.backdrop} style={styles.backdrop}>
     <SafeAreaView style={styles.container}>
-      <Text style={styles.wordmark}>BruinChat</Text>
+      <Text style={styles.wordmark}>BChat</Text>
       <Text style={styles.tagline}>Instantly connected chats for every UCLA class</Text>
       <Text style={styles.title}>Sign in with your{"\n"}UCLA email</Text>
 

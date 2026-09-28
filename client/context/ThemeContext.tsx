@@ -42,7 +42,7 @@ export type Colors = {
   };
 };
 
-// Palette sampled from the BruinChat promo art: warm cream paper, sky-blue
+// Palette sampled from the BChat promo art: warm cream paper, sky-blue
 // and sunset-orange speech bubbles, periwinkle accent.
 const lightColors: Colors = {
   background: "#FFF8F1",

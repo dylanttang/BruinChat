@@ -1,4 +1,4 @@
-# BruinChat Backend Architecture
+# BChat Backend Architecture
 
 Living reference for how the backend works: tech stack, auth, data models, API endpoints, real-time messaging, and the class data pipeline. Update this when you ship something architecturally significant.
 

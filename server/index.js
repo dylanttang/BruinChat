@@ -80,7 +80,7 @@ io.on('connection', (socket) => {
 
 // Test route
 app.get('/', (req, res) => {
-  res.json({ message: 'BruinChat API is running!' });
+  res.json({ message: 'BChat API is running!' });
 });
 
 app.get('/api/health', (req, res) => {

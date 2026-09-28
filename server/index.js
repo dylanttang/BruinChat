@@ -20,6 +20,13 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+  }
+});
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Trust the first proxy in front of us (load balancer / cloud host) so

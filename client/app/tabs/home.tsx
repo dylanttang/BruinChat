@@ -11,8 +11,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch } from "../../lib/api";
-import { useTheme, Colors } from "../../context/ThemeContext";
+import GradientButton from "../../components/GradientButton";
+import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 
 const CHAT_PAGE_SIZE = 20;
 
@@ -39,6 +41,12 @@ function formatTime(iso: string | null): string {
     return date.toLocaleDateString([], { weekday: "short" });
   }
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// "COM SCI 35L" -> "CS", "Physics 1A" -> "P1"
+function getInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
 
 export default function Home() {
@@ -103,7 +111,9 @@ export default function Home() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.iconPlaceholder} />
+        <LinearGradient colors={colors.gradients.sent} style={styles.logoTile}>
+          <Ionicons name="chatbubbles" size={18} color={colors.onPrimary} />
+        </LinearGradient>
         <Text style={styles.title}>BruinChat</Text>
         <TouchableOpacity
           style={styles.profileButton}
@@ -111,7 +121,7 @@ export default function Home() {
           accessibilityRole="button"
           accessibilityLabel="Open profile settings"
         >
-          <Ionicons name="person-circle-outline" size={30} color={colors.text} />
+          <Ionicons name="person-circle-outline" size={30} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -124,14 +134,11 @@ export default function Home() {
           <Text style={styles.emptyText}>
             No chats yet. Add classes to get started.
           </Text>
-          <TouchableOpacity
-            style={styles.emptyButton}
+          <GradientButton
+            label="Add Classes"
             onPress={() => router.push("/auth/questionnaire/step3")}
-            accessibilityRole="button"
-            accessibilityLabel="Add classes"
-          >
-            <Text style={styles.emptyButtonText}>Add Classes</Text>
-          </TouchableOpacity>
+            style={styles.emptyButton}
+          />
         </View>
       ) : (
         <FlatList
@@ -150,12 +157,17 @@ export default function Home() {
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <TouchableOpacity
               style={styles.chatRow}
               onPress={() => router.push(`/chat/${item._id}`)}
             >
-              <View style={styles.avatar} />
+              <LinearGradient
+                colors={index % 2 === 0 ? colors.gradients.received : colors.gradients.sent}
+                style={styles.avatar}
+              >
+                <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+              </LinearGradient>
 
               <View style={styles.chatText}>
                 <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
@@ -187,17 +199,19 @@ function makeStyles(colors: Colors) {
       paddingHorizontal: 16,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      backgroundColor: colors.card,
     },
     title: {
-      fontSize: 20,
-      fontWeight: "600",
-      color: colors.text,
+      fontSize: 24,
+      fontFamily: fonts.bold,
+      color: colors.brand,
     },
-    iconPlaceholder: {
-      width: 32,
-      height: 32,
-      backgroundColor: colors.avatarBg,
-      borderRadius: 4,
+    logoTile: {
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      alignItems: "center",
+      justifyContent: "center",
     },
     profileButton: {
       width: 32,
@@ -224,24 +238,32 @@ function makeStyles(colors: Colors) {
     avatar: {
       width: 48,
       height: 48,
-      backgroundColor: colors.avatarBg,
-      borderRadius: 8,
+      borderRadius: 16,
       marginRight: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    avatarText: {
+      fontFamily: fonts.bold,
+      fontSize: 16,
+      color: colors.onPrimary,
     },
     chatText: {
       flex: 1,
     },
     chatName: {
       fontSize: 16,
-      fontWeight: "500",
+      fontFamily: fonts.medium,
       color: colors.text,
     },
     lastMessage: {
+      fontFamily: fonts.regular,
       fontSize: 14,
       color: colors.subtext,
       marginTop: 2,
     },
     time: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
     },
@@ -252,21 +274,13 @@ function makeStyles(colors: Colors) {
       paddingHorizontal: 32,
     },
     emptyText: {
+      fontFamily: fonts.regular,
       fontSize: 16,
       color: colors.subtext,
       textAlign: "center",
     },
     emptyButton: {
       marginTop: 20,
-      backgroundColor: colors.inputBg,
-      paddingHorizontal: 30,
-      paddingVertical: 12,
-      borderRadius: 20,
-    },
-    emptyButtonText: {
-      fontSize: 16,
-      fontWeight: "500",
-      color: colors.text,
     },
   });
 }

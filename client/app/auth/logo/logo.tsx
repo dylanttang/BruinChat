@@ -1,9 +1,12 @@
 import { useEffect } from "react";
-import { Image, View, Text } from "react-native";
+import { Image, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import { useTheme, fonts } from "../../../context/ThemeContext";
 
 export default function Logo() {
   const router = useRouter();
+  const { colors } = useTheme();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -13,15 +16,30 @@ export default function Logo() {
   }, []);
 
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}>
-      <Text style={{ fontSize: 24, fontWeight: "bold", marginBottom: 16 }}>
-        BruinChat
-      </Text>
+    <LinearGradient colors={colors.gradients.backdrop} style={styles.container}>
+      <Text style={[styles.wordmark, { color: colors.brand }]}>BruinChat</Text>
       <Image
         source={require("../../../src/assets/icon.png")}
-        style={{ width: 120, height: 120 }}
+        style={styles.icon}
         resizeMode="contain"
       />
-    </View>
+    </LinearGradient>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  wordmark: {
+    fontFamily: fonts.bold,
+    fontSize: 40,
+    marginBottom: 16,
+  },
+  icon: {
+    width: 120,
+    height: 120,
+  },
+});

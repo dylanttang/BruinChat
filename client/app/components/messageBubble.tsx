@@ -2,7 +2,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable } fro
 import { ResizeMode, Video } from "expo-av";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useTheme, Colors } from "../../context/ThemeContext";
+import { LinearGradient } from "expo-linear-gradient";
+import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { API_URL } from "../../lib/api";
 
 type MediaKind = "image" | "video";
@@ -92,6 +93,11 @@ export default function MessageBubble({ item, onLongPress, onReact }: Props) {
     setVideoEnded(false);
   }, [expandedMedia?.uri]);
 
+  // Text-only bubbles get the brand gradients (orange = you, blue = others).
+  // Media bubbles keep the frosted-glass frame so photos aren't tinted.
+  const hasMedia = mediaUrls.length > 0;
+  const onGradient = !hasMedia;
+
   return (
     <>
       <TouchableOpacity
@@ -104,17 +110,30 @@ export default function MessageBubble({ item, onLongPress, onReact }: Props) {
         <View style={{ maxWidth: "75%" }}>
           {!isMe && <Text style={styles.username}>{item.user}</Text>}
 
-          <View
+          <LinearGradient
+            colors={
+              hasMedia
+                ? ["transparent", "transparent"]
+                : isMe
+                  ? colors.gradients.sent
+                  : colors.gradients.received
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
             style={[
               styles.bubble,
               isMe ? styles.myBubble : styles.otherBubble,
-              mediaUrls.length > 0 && styles.mediaBubble,
+              hasMedia && styles.mediaBubble,
             ]}
           >
             {item.replyTo && (
-              <View style={[styles.replyPreview, isMe ? styles.replyPreviewMe : styles.replyPreviewOther]}>
-                <Text style={styles.replyName}>{item.replyTo.senderId.displayName}</Text>
-                <Text style={styles.replyText} numberOfLines={1}>{getReplySummary(item.replyTo)}</Text>
+              <View style={[styles.replyPreview, onGradient ? styles.replyPreviewOnGradient : styles.replyPreviewPlain]}>
+                <Text style={[styles.replyName, onGradient && styles.onGradientText]}>
+                  {item.replyTo.senderId.displayName}
+                </Text>
+                <Text style={[styles.replyText, onGradient && styles.onGradientSubtext]} numberOfLines={1}>
+                  {getReplySummary(item.replyTo)}
+                </Text>
               </View>
             )}
             {mediaUrls.length > 0 && (
@@ -145,11 +164,11 @@ export default function MessageBubble({ item, onLongPress, onReact }: Props) {
               </View>
             )}
             {!!item.text && (
-              <Text style={{ color: isMe ? "white" : colors.text, fontSize: 16 }}>
+              <Text style={[styles.messageText, onGradient && styles.onGradientText]}>
                 {item.text}
               </Text>
             )}
-          </View>
+          </LinearGradient>
 
           <Text style={[styles.time, { alignSelf: isMe ? "flex-end" : "flex-start" }]}>
             {item.time}
@@ -254,6 +273,7 @@ function makeStyles(colors: Colors) {
       marginRight: 8,
     },
     username: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.subtext,
       marginBottom: 2,
@@ -261,7 +281,8 @@ function makeStyles(colors: Colors) {
     bubble: {
       paddingHorizontal: 14,
       paddingVertical: 10,
-      borderRadius: 18,
+      borderRadius: 20,
+      overflow: "hidden",
     },
     mediaBubble: {
       padding: 6,
@@ -275,35 +296,51 @@ function makeStyles(colors: Colors) {
       elevation: 4,
     },
     myBubble: {
-      backgroundColor: "#007AFF",
       borderBottomRightRadius: 6,
     },
     otherBubble: {
-      backgroundColor: colors.inputBg,
       borderBottomLeftRadius: 6,
+    },
+    messageText: {
+      fontFamily: fonts.regular,
+      fontSize: 16,
+      lineHeight: 21,
+      color: colors.text,
+    },
+    onGradientText: {
+      color: colors.bubbleText,
+    },
+    onGradientSubtext: {
+      color: colors.bubbleSubtext,
     },
     replyPreview: {
       borderRadius: 8,
       padding: 6,
       marginBottom: 6,
     },
-    replyPreviewMe: {
-      backgroundColor: "rgba(255,255,255,0.2)",
+    replyPreviewOnGradient: {
+      backgroundColor: colors.bubbleQuote,
+      borderLeftWidth: 3,
+      borderLeftColor: colors.bubbleQuoteBorder,
     },
-    replyPreviewOther: {
-      backgroundColor: colors.border,
+    replyPreviewPlain: {
+      backgroundColor: colors.inputBg,
+      borderLeftWidth: 3,
+      borderLeftColor: colors.accent,
     },
     replyName: {
       fontSize: 11,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       color: colors.mutedText,
       marginBottom: 1,
     },
     replyText: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.subtext,
     },
     time: {
+      fontFamily: fonts.regular,
       fontSize: 10,
       color: colors.mutedText,
       marginTop: 2,
@@ -325,9 +362,11 @@ function makeStyles(colors: Colors) {
       marginBottom: 4,
     },
     myReactionPill: {
-      borderColor: "#007AFF",
+      borderColor: colors.brand,
+      backgroundColor: colors.brandSoft,
     },
     reactionText: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.text,
     },
@@ -362,7 +401,7 @@ function makeStyles(colors: Colors) {
     videoPlayText: {
       color: "white",
       fontSize: 22,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
       textShadowColor: "rgba(0,0,0,0.6)",
       textShadowOffset: { width: 0, height: 1 },
       textShadowRadius: 4,
@@ -425,7 +464,7 @@ function makeStyles(colors: Colors) {
     videoReplayText: {
       color: "white",
       fontSize: 28,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
       marginLeft: 4,
       textShadowColor: "rgba(0,0,0,0.35)",
       textShadowOffset: { width: 0, height: 1 },
@@ -447,7 +486,7 @@ function makeStyles(colors: Colors) {
     closePhotoText: {
       color: "white",
       fontSize: 15,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
     },
   });
 }

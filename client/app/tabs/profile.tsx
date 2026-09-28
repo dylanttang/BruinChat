@@ -19,7 +19,7 @@ import { useCallback, useMemo, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { apiFetch } from "../../lib/api";
 import { uploadToCloudinary } from "../../lib/cloudinary";
-import { useTheme, Colors } from "../../context/ThemeContext";
+import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 
 type Course = {
   _id: string;
@@ -140,7 +140,7 @@ export default function Profile() {
           />
         )}
         <TouchableOpacity style={styles.editAvatar} onPress={pickAvatar} disabled={uploadingAvatar}>
-          <Ionicons name="pencil" size={16} color="white" />
+          <Ionicons name="pencil" size={16} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -273,13 +273,15 @@ function makeStyles(colors: Colors, tabBarHeight: number) {
       position: "absolute",
       bottom: 8,
       right: 8,
-      backgroundColor: "#333",
+      backgroundColor: colors.primary,
+      borderWidth: 2,
+      borderColor: colors.background,
       padding: 6,
       borderRadius: 20,
     },
     name: {
       fontSize: 23,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       textAlign: "center",
       marginVertical: 6,
       color: colors.text,
@@ -291,9 +293,10 @@ function makeStyles(colors: Colors, tabBarHeight: number) {
     profileInfoText: {
       fontSize: 14,
       color: colors.subtext,
-      fontWeight: "500",
+      fontFamily: fonts.medium,
     },
     profileGoalText: {
+      fontFamily: fonts.regular,
       fontSize: 13,
       color: colors.mutedText,
       marginTop: 2,
@@ -333,10 +336,10 @@ function makeStyles(colors: Colors, tabBarHeight: number) {
       width: 5,
       height: 42,
       borderRadius: 3,
-      backgroundColor: colors.mutedText,
+      backgroundColor: colors.brand,
     },
     cardTitle: {
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       fontSize: 18,
       marginBottom: 10,
       color: colors.text,
@@ -349,24 +352,25 @@ function makeStyles(colors: Colors, tabBarHeight: number) {
       borderColor: colors.separator,
     },
     courseTitle: {
-      fontWeight: "500",
+      fontFamily: fonts.medium,
       paddingVertical: 5,
       color: colors.text,
     },
     courseSubtitle: {
+      fontFamily: fonts.regular,
       color: colors.subtext,
     },
     editButton: {
       marginTop: 10,
       alignSelf: "center",
-      backgroundColor: colors.inputBg,
+      backgroundColor: colors.primary,
       paddingHorizontal: 30,
       paddingVertical: 12,
       borderRadius: 20,
     },
     editText: {
-      fontWeight: "500",
-      color: colors.text,
+      fontFamily: fonts.medium,
+      color: colors.onPrimary,
     },
     statsRow: {
       flexDirection: "row",
@@ -384,10 +388,11 @@ function makeStyles(colors: Colors, tabBarHeight: number) {
     },
     statValue: {
       fontSize: 20,
-      fontWeight: "700",
-      color: colors.text,
+      fontFamily: fonts.bold,
+      color: colors.brand,
     },
     statLabel: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
       marginTop: 2,

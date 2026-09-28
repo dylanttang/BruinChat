@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useTheme, ThemeMode, Colors } from "../../context/ThemeContext";
+import { useTheme, fonts, ThemeMode, Colors } from "../../context/ThemeContext";
 import { clearDevUserId, apiFetch } from "../../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
@@ -18,6 +18,7 @@ export default function Settings() {
   const router = useRouter();
   const { colors, mode, setMode } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const switchTrack = { false: colors.border, true: colors.primary };
 
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [classNotif, setClassNotif] = useState(true);
@@ -119,21 +120,21 @@ export default function Settings() {
         <View style={styles.card}>
           <View style={styles.row}>
             <Text style={styles.rowText}>Enable notifications</Text>
-            <Switch value={notifEnabled} onValueChange={handleNotifEnabled} />
+            <Switch value={notifEnabled} onValueChange={handleNotifEnabled} trackColor={switchTrack} />
           </View>
           <View style={[styles.row, { opacity: notifEnabled ? 1 : 0.4 }]}>
             <View>
               <Text style={styles.rowText}>Class notifications</Text>
               <Text style={styles.rowSubtext}>New messages in your classes</Text>
             </View>
-            <Switch value={classNotif} onValueChange={handleClassNotif} disabled={!notifEnabled} />
+            <Switch value={classNotif} onValueChange={handleClassNotif} disabled={!notifEnabled} trackColor={switchTrack} />
           </View>
           <View style={[styles.row, styles.lastRow, { opacity: notifEnabled ? 1 : 0.4 }]}>
             <View>
               <Text style={styles.rowText}>Reply notifications</Text>
               <Text style={styles.rowSubtext}>When someone replies to you</Text>
             </View>
-            <Switch value={replyNotif} onValueChange={handleReplyNotif} disabled={!notifEnabled} />
+            <Switch value={replyNotif} onValueChange={handleReplyNotif} disabled={!notifEnabled} trackColor={switchTrack} />
           </View>
         </View>
 
@@ -222,7 +223,7 @@ function makeStyles(colors: Colors) {
     },
     header: {
       fontSize: 28,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
       marginBottom: 10,
       marginTop: 10,
       color: colors.text,
@@ -230,8 +231,8 @@ function makeStyles(colors: Colors) {
     section: {
       marginTop: 20,
       marginBottom: 8,
-      fontWeight: "600",
-      color: colors.text,
+      fontFamily: fonts.medium,
+      color: colors.brand,
     },
     card: {
       borderRadius: 16,
@@ -252,38 +253,41 @@ function makeStyles(colors: Colors) {
       borderBottomWidth: 0,
     },
     rowText: {
+      fontFamily: fonts.regular,
       fontSize: 16,
       color: colors.text,
     },
     chevron: {
+      fontFamily: fonts.regular,
       fontSize: 18,
       color: colors.mutedText,
     },
     check: {
       fontSize: 16,
-      color: colors.text,
-      fontWeight: "600",
+      color: colors.brand,
+      fontFamily: fonts.medium,
     },
     signOut: {
       marginTop: 30,
       borderWidth: 1,
-      borderColor: "red",
+      borderColor: colors.danger,
       borderRadius: 14,
       padding: 14,
       alignItems: "center",
     },
     signOutText: {
-      color: "red",
-      fontWeight: "600",
+      color: colors.danger,
+      fontFamily: fonts.medium,
     },
     rowSubtext: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
       marginTop: 2,
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.5)",
+      backgroundColor: colors.overlay,
       justifyContent: "center",
       alignItems: "center",
       padding: 24,
@@ -296,11 +300,12 @@ function makeStyles(colors: Colors) {
     },
     modalTitle: {
       fontSize: 18,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       color: colors.text,
       marginBottom: 14,
     },
     feedbackInput: {
+      fontFamily: fonts.regular,
       backgroundColor: colors.inputBg,
       borderRadius: 10,
       padding: 12,
@@ -325,7 +330,7 @@ function makeStyles(colors: Colors) {
     },
     modalCancelText: {
       color: colors.text,
-      fontWeight: "500",
+      fontFamily: fonts.medium,
     },
     modalSubmit: {
       paddingHorizontal: 18,
@@ -334,8 +339,8 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.primary,
     },
     modalSubmitText: {
-      color: "#fff",
-      fontWeight: "600",
+      color: colors.onPrimary,
+      fontFamily: fonts.medium,
     },
   });
 }

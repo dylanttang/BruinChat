@@ -11,11 +11,13 @@ import {
   StyleSheet,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { apiFetch, setDevUserId, signInWithGoogleIdToken } from "../../../lib/api";
-import { useTheme, Colors } from "../../../context/ThemeContext";
+import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
+import GradientButton from "../../../components/GradientButton";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -122,7 +124,10 @@ export default function Welcome() {
   };
 
   return (
+    <LinearGradient colors={colors.gradients.backdrop} style={styles.backdrop}>
     <SafeAreaView style={styles.container}>
+      <Text style={styles.wordmark}>BruinChat</Text>
+      <Text style={styles.tagline}>Instantly connected chats for every UCLA class</Text>
       <Text style={styles.title}>Sign in with your{"\n"}UCLA email</Text>
 
       <TextInput
@@ -147,17 +152,13 @@ export default function Welcome() {
 
       {authError && <Text style={styles.errorText}>{authError}</Text>}
 
-      <TouchableOpacity
-        style={[styles.signInBtn, (!request || signingIn || !isGoogleConfigured) && styles.signInBtnDisabled]}
+      <GradientButton
+        label="Sign in with Google"
         onPress={signInWithGoogle}
-        disabled={!request || signingIn}
-      >
-        {signingIn ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Text style={styles.signInText}>Sign in with Google</Text>
-        )}
-      </TouchableOpacity>
+        disabled={!request || !isGoogleConfigured}
+        loading={signingIn}
+        style={styles.signInBtn}
+      />
 
       {/* TODO: Remove once every environment has Google OAuth client IDs. */}
       <TouchableOpacity style={styles.devBtn} onPress={openDevPicker}>
@@ -207,29 +208,47 @@ export default function Welcome() {
         </View>
       </Modal>
     </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 function makeStyles(colors: Colors) {
   return StyleSheet.create({
+    backdrop: {
+      flex: 1,
+    },
     container: {
       flex: 1,
-      backgroundColor: colors.background,
       justifyContent: "center",
       paddingHorizontal: 32,
     },
+    wordmark: {
+      fontFamily: fonts.bold,
+      fontSize: 44,
+      textAlign: "center",
+      color: colors.brand,
+    },
+    tagline: {
+      fontFamily: fonts.regular,
+      fontSize: 15,
+      textAlign: "center",
+      color: colors.subtext,
+      marginTop: 6,
+      marginBottom: 40,
+    },
     title: {
-      fontSize: 26,
-      fontWeight: "bold",
+      fontSize: 22,
+      fontFamily: fonts.bold,
       textAlign: "center",
       marginBottom: 32,
       lineHeight: 34,
       color: colors.text,
     },
     input: {
-      borderWidth: 1,
-      borderColor: colors.border,
+      fontFamily: fonts.regular,
+      borderWidth: 1.5,
       borderRadius: 25,
+      borderColor: colors.border,
       paddingHorizontal: 20,
       paddingVertical: 14,
       fontSize: 16,
@@ -250,58 +269,50 @@ function makeStyles(colors: Colors) {
     checkbox: {
       width: 18,
       height: 18,
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: colors.mutedText,
+      borderRadius: 5,
       marginRight: 8,
       backgroundColor: "transparent",
     },
     checkboxChecked: {
-      backgroundColor: colors.subtext,
+      backgroundColor: colors.brand,
+      borderColor: colors.brand,
     },
     checkmark: {
-      color: "#fff",
+      fontFamily: fonts.regular,
+      color: colors.onPrimary,
       fontSize: 12,
       lineHeight: 18,
       textAlign: "center",
     },
     rowText: {
+      fontFamily: fonts.regular,
       fontSize: 14,
       color: colors.text,
     },
     errorText: {
-      color: "#B42318",
+      fontFamily: fonts.regular,
+      color: colors.danger,
       fontSize: 13,
       textAlign: "center",
       marginBottom: 12,
     },
     signInBtn: {
-      backgroundColor: colors.primary,
-      borderRadius: 25,
-      paddingVertical: 14,
-      alignItems: "center",
-      alignSelf: "center",
-      minWidth: 210,
-      paddingHorizontal: 28,
-    },
-    signInBtnDisabled: {
-      opacity: 0.6,
-    },
-    signInText: {
-      color: "#fff",
-      fontSize: 16,
-      fontWeight: "600",
+      alignSelf: "stretch",
     },
     devBtn: {
       marginTop: 24,
       alignSelf: "center",
     },
     devText: {
+      fontFamily: fonts.regular,
       fontSize: 14,
       color: colors.mutedText,
     },
     overlay: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.4)",
+      backgroundColor: colors.overlay,
       justifyContent: "center",
       padding: 24,
     },
@@ -312,11 +323,12 @@ function makeStyles(colors: Colors) {
     },
     modalTitle: {
       fontSize: 18,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       marginBottom: 4,
       color: colors.text,
     },
     modalSubtitle: {
+      fontFamily: fonts.regular,
       fontSize: 13,
       color: colors.mutedText,
       marginBottom: 16,
@@ -327,14 +339,17 @@ function makeStyles(colors: Colors) {
       borderBottomColor: colors.border,
     },
     devUserName: {
+      fontFamily: fonts.regular,
       fontSize: 16,
       color: colors.text,
     },
     devUserHandle: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
     },
     emptyText: {
+      fontFamily: fonts.regular,
       color: colors.mutedText,
       paddingVertical: 12,
     },
@@ -344,6 +359,7 @@ function makeStyles(colors: Colors) {
       paddingVertical: 10,
     },
     cancelText: {
+      fontFamily: fonts.regular,
       color: colors.text,
     },
   });

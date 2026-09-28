@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from "react-native
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
-import { useTheme, Colors } from "../context/ThemeContext";
+import { useTheme, fonts, Colors } from "../context/ThemeContext";
 
 const archivedChats = [
   { id: "1", name: "Class group A", lastMessage: "last message sent" },
@@ -61,12 +61,13 @@ function makeStyles(colors: Colors) {
       borderBottomColor: colors.border,
     },
     back: {
+      fontFamily: fonts.regular,
       fontSize: 22,
-      color: colors.text,
+      color: colors.brand,
     },
     title: {
       fontSize: 18,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       color: colors.text,
     },
     list: {
@@ -84,7 +85,7 @@ function makeStyles(colors: Colors) {
       width: 48,
       height: 48,
       backgroundColor: colors.avatarBg,
-      borderRadius: 8,
+      borderRadius: 16,
       marginRight: 12,
     },
     chatText: {
@@ -92,10 +93,11 @@ function makeStyles(colors: Colors) {
     },
     chatName: {
       fontSize: 16,
-      fontWeight: "500",
+      fontFamily: fonts.medium,
       color: colors.text,
     },
     lastMessage: {
+      fontFamily: fonts.regular,
       fontSize: 14,
       color: colors.subtext,
       marginTop: 2,

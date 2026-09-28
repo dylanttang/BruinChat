@@ -20,7 +20,7 @@ import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
 import { apiFetch, getDevUserId } from "../../lib/api";
-import { useTheme, Colors } from "../../context/ThemeContext";
+import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { createSocket } from "../../lib/socket";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
@@ -521,7 +521,7 @@ export default function ChatScreen() {
         </View>
       ) : messages.length === 0 ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
-          <Text style={{ color: colors.subtext, textAlign: "center" }}>
+          <Text style={styles.emptyText}>
             No messages yet. Say hi!
           </Text>
         </View>
@@ -639,7 +639,7 @@ export default function ChatScreen() {
         )}
         <View style={styles.inputBar}>
           <TouchableOpacity style={styles.plusBtn} onPress={openPhotoOptions} disabled={sending}>
-            <Text style={{ fontSize: 22, color: colors.text }}>＋</Text>
+            <Text style={styles.plusText}>＋</Text>
           </TouchableOpacity>
 
           <TextInput
@@ -652,8 +652,13 @@ export default function ChatScreen() {
             editable={!sending}
           />
 
-          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || (!message.trim() && pendingMedia.length === 0)}>
-            <Text style={{ fontSize: 18, color: colors.text, opacity: sending || (!message.trim() && pendingMedia.length === 0) ? 0.3 : 1 }}>➤</Text>
+          <TouchableOpacity
+            style={[styles.sendBtn, (sending || (!message.trim() && pendingMedia.length === 0)) && styles.sendBtnDisabled]}
+            onPress={sendMessage}
+            disabled={sending || (!message.trim() && pendingMedia.length === 0)}
+            accessibilityLabel="Send message"
+          >
+            <Text style={styles.sendText}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -669,6 +674,7 @@ function makeStyles(colors: Colors) {
     },
     header: {
       height: 56,
+      backgroundColor: colors.card,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
@@ -677,26 +683,29 @@ function makeStyles(colors: Colors) {
       borderColor: colors.border,
     },
     back: {
+      fontFamily: fonts.regular,
       fontSize: 22,
-      color: colors.text,
+      color: colors.brand,
     },
     title: {
       fontSize: 18,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       flex: 1,
       textAlign: "center",
       paddingHorizontal: 12,
       color: colors.text,
     },
     menuDot: {
+      fontFamily: fonts.regular,
       fontSize: 16,
-      color: colors.subtext,
+      color: colors.brand,
       letterSpacing: 2,
     },
     list: {
       padding: 12,
     },
     inputBar: {
+      backgroundColor: colors.card,
       flexDirection: "row",
       alignItems: "center",
       padding: 10,
@@ -704,6 +713,7 @@ function makeStyles(colors: Colors) {
       borderColor: colors.border,
     },
     input: {
+      fontFamily: fonts.regular,
       flex: 1,
       backgroundColor: colors.inputBg,
       borderRadius: 22,
@@ -716,12 +726,34 @@ function makeStyles(colors: Colors) {
       width: 36,
       height: 36,
       borderRadius: 18,
-      backgroundColor: colors.inputBg,
+      backgroundColor: colors.brandSoft,
       alignItems: "center",
       justifyContent: "center",
     },
+    plusText: {
+      fontSize: 22,
+      color: colors.brand,
+    },
     sendBtn: {
-      paddingHorizontal: 6,
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    sendBtnDisabled: {
+      opacity: 0.35,
+    },
+    sendText: {
+      fontSize: 16,
+      color: colors.onPrimary,
+      marginLeft: 2,
+    },
+    emptyText: {
+      fontFamily: fonts.regular,
+      color: colors.subtext,
+      textAlign: "center",
     },
     photoPreviewBar: {
       borderTopWidth: 1,
@@ -756,7 +788,7 @@ function makeStyles(colors: Colors) {
     videoPreviewBadgeText: {
       color: "white",
       fontSize: 18,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
       textShadowColor: "rgba(0,0,0,0.6)",
       textShadowOffset: { width: 0, height: 1 },
       textShadowRadius: 4,
@@ -775,13 +807,14 @@ function makeStyles(colors: Colors) {
     removePhotoText: {
       color: "white",
       fontSize: 12,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
     },
     dateSeparator: {
       alignItems: "center",
       marginVertical: 12,
     },
     dateSeparatorText: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
     },
@@ -808,6 +841,7 @@ function makeStyles(colors: Colors) {
       marginRight: 4,
     },
     actionEmoji: {
+      fontFamily: fonts.regular,
       fontSize: 16,
     },
     actionReplyButton: {
@@ -821,7 +855,7 @@ function makeStyles(colors: Colors) {
     },
     actionReplyText: {
       fontSize: 13,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       color: colors.text,
     },
     actionCloseButton: {
@@ -833,6 +867,7 @@ function makeStyles(colors: Colors) {
       marginLeft: 6,
     },
     actionCloseText: {
+      fontFamily: fonts.regular,
       fontSize: 20,
       color: colors.mutedText,
     },
@@ -844,6 +879,7 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.background,
     },
     typingText: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
     },
@@ -861,10 +897,11 @@ function makeStyles(colors: Colors) {
     },
     replyBarName: {
       fontSize: 12,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       color: colors.text,
     },
     replyBarText: {
+      fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.subtext,
     },

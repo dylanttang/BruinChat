@@ -35,7 +35,10 @@ router.get('/dev-list', authRateLimit, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/me', devAuth, async (req, res) => {
   try {
+    // moderationHistory holds internal moderator notes; admins see it through
+    // /api/admin, users only get their notices.
     const user = await User.findById(req.user._id)
+      .select('-moderationHistory')
       .populate('courses')
       .lean();
 
@@ -274,6 +277,26 @@ router.put('/me/avatar', devAuth, async (req, res) => {
   } catch (err) {
     console.error('PUT /api/users/me/avatar error:', err);
     return res.status(500).json({ error: 'Failed to update avatar' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/me/notices/seen — Mark all moderation notices as seen
+//
+// The app shows unseen notices (warnings, mutes, removed messages) once when
+// it opens, then calls this.
+// ---------------------------------------------------------------------------
+router.post('/me/notices/seen', devAuth, async (req, res) => {
+  try {
+    await User.updateOne(
+      { _id: req.user._id },
+      { $set: { 'moderationNotices.$[unseen].seenAt': new Date() } },
+      { arrayFilters: [{ 'unseen.seenAt': null }] }
+    );
+    res.status(204).end();
+  } catch (err) {
+    console.error('POST /api/users/me/notices/seen error:', err);
+    res.status(500).json({ error: 'Failed to update notices' });
   }
 });
 

@@ -11,11 +11,16 @@ const reportSchema = new mongoose.Schema(
       required: true,
     },
     details: { type: String, default: '' },
+    // pending -> dismissed (no action) or actioned (see `actions`).
+    // 'warned' and 'banned' are legacy values from before `actions` existed.
     status: {
       type: String,
-      enum: ['pending', 'dismissed', 'warned', 'banned'],
+      enum: ['pending', 'dismissed', 'actioned', 'warned', 'banned'],
       default: 'pending',
     },
+    // What the moderator did, e.g. ['removed_message', 'muted'].
+    actions: [{ type: String, enum: ['removed_message', 'warned', 'muted', 'banned'] }],
+    muteDays: { type: Number, default: null },
     resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     resolvedAt: { type: Date, default: null },
     resolutionNote: { type: String, default: '' },

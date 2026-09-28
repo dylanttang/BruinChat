@@ -11,7 +11,7 @@ import { devAuth } from '../middleware/devAuth.js';
 import { sendPush } from '../utils/push.js';
 import { deleteMessageMediaFiles, uploadDir } from '../utils/media.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
-import { hasAcceptedTerms, TERMS_REQUIRED_ERROR } from '../utils/terms.js';
+import { postingBlock } from '../utils/moderation.js';
 
 const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
@@ -367,12 +367,8 @@ router.get('/:id/messages', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => {
   try {
-    if (req.user.bannedAt) {
-      return res.status(403).json({ error: 'Your account has been banned' });
-    }
-    if (!hasAcceptedTerms(req.user)) {
-      return res.status(403).json(TERMS_REQUIRED_ERROR);
-    }
+    const blocked = postingBlock(req.user);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
 
     const chatId = req.params.id;
 
@@ -480,13 +476,10 @@ router.post('/:id/messages/media', devAuth, messageSendRateLimit, (req, res) => 
     }
 
     try {
-      if (req.user.bannedAt) {
+      const blocked = postingBlock(req.user);
+      if (blocked) {
         deleteUploadedFiles(req.files);
-        return res.status(403).json({ error: 'Your account has been banned' });
-      }
-      if (!hasAcceptedTerms(req.user)) {
-        deleteUploadedFiles(req.files);
-        return res.status(403).json(TERMS_REQUIRED_ERROR);
+        return res.status(blocked.status).json(blocked.body);
       }
 
       const chatId = req.params.id;
@@ -539,12 +532,8 @@ router.post('/:id/messages/media', devAuth, messageSendRateLimit, (req, res) => 
 // ---------------------------------------------------------------------------
 router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (req, res) => {
   try {
-    if (req.user.bannedAt) {
-      return res.status(403).json({ error: 'Your account has been banned' });
-    }
-    if (!hasAcceptedTerms(req.user)) {
-      return res.status(403).json(TERMS_REQUIRED_ERROR);
-    }
+    const blocked = postingBlock(req.user);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
 
     const { chatId, id: messageId } = req.params;
 
@@ -649,12 +638,8 @@ router.delete('/:id/members/me', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
   try {
-    if (req.user.bannedAt) {
-      return res.status(403).json({ error: 'Your account has been banned' });
-    }
-    if (!hasAcceptedTerms(req.user)) {
-      return res.status(403).json(TERMS_REQUIRED_ERROR);
-    }
+    const blocked = postingBlock(req.user);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
 
     const { chatId, id: messageId } = req.params;
 

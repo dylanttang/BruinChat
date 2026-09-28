@@ -222,6 +222,8 @@ export default function ChatScreen() {
   blockedIdsRef.current = blockedIds;
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const [mutedUntil, setMutedUntil] = useState<Date | null>(null);
+  const isMuted = !!mutedUntil && mutedUntil > new Date();
 
   const loadData = useCallback(async () => {
     try {
@@ -235,6 +237,7 @@ export default function ChatScreen() {
         const data = await meRes.json();
         setCurrentUserId(data.user._id);
         setBlockedIds(new Set((data.user.blockedUsers ?? []).map(String)));
+        setMutedUntil(data.user.mutedUntil ? new Date(data.user.mutedUntil) : null);
       }
 
       if (chatRes.ok) {
@@ -438,8 +441,8 @@ export default function ChatScreen() {
       method: "POST",
       body: JSON.stringify({ text, ...(replyingTo ? { replyTo: replyingTo._id } : {}) }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), data);
     return data.message as Message;
   };
 
@@ -470,8 +473,8 @@ export default function ChatScreen() {
           method: "POST",
           body: formData,
         });
-        if (!mediaRes.ok) throw new Error(`HTTP ${mediaRes.status}`);
         const mediaData = await mediaRes.json();
+        if (!mediaRes.ok) throw Object.assign(new Error(mediaData.error || `HTTP ${mediaRes.status}`), mediaData);
         newMessages.push(mediaData.message);
       }
 
@@ -484,9 +487,17 @@ export default function ChatScreen() {
       setPendingMedia([]);
       setReplyingTo(null);
       stopTyping();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to send:", err);
-      Alert.alert("Failed to send", "Please try again.");
+      if (err?.code === "MUTED") {
+        setMutedUntil(new Date(err.mutedUntil));
+      } else if (err?.code === "BANNED") {
+        router.replace("/banned");
+      } else if (err?.code === "TERMS_REQUIRED") {
+        router.replace("/auth/terms");
+      } else {
+        Alert.alert("Failed to send", "Please try again.");
+      }
     } finally {
       setSending(false);
     }
@@ -722,30 +733,41 @@ export default function ChatScreen() {
             </ScrollView>
           </View>
         )}
-        <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.plusBtn} onPress={openPhotoOptions} disabled={sending}>
-            <Text style={styles.plusText}>＋</Text>
-          </TouchableOpacity>
+        {isMuted ? (
+          <View style={styles.mutedBar}>
+            <Text style={styles.mutedTitle}>You're muted</Text>
+            <Text style={styles.mutedText}>
+              You can read this chat but can't post until{" "}
+              {mutedUntil!.toLocaleDateString([], { month: "short", day: "numeric" })} at{" "}
+              {mutedUntil!.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.inputBar}>
+            <TouchableOpacity style={styles.plusBtn} onPress={openPhotoOptions} disabled={sending}>
+              <Text style={styles.plusText}>＋</Text>
+            </TouchableOpacity>
 
-          <TextInput
-            placeholder="Type a message..."
-            placeholderTextColor={colors.mutedText}
-            style={styles.input}
-            value={message}
-            onChangeText={handleMessageChange}
-            onSubmitEditing={sendMessage}
-            editable={!sending}
-          />
+            <TextInput
+              placeholder="Type a message..."
+              placeholderTextColor={colors.mutedText}
+              style={styles.input}
+              value={message}
+              onChangeText={handleMessageChange}
+              onSubmitEditing={sendMessage}
+              editable={!sending}
+            />
 
-          <TouchableOpacity
-            style={[styles.sendBtn, (sending || (!message.trim() && pendingMedia.length === 0)) && styles.sendBtnDisabled]}
-            onPress={sendMessage}
-            disabled={sending || (!message.trim() && pendingMedia.length === 0)}
-            accessibilityLabel="Send message"
-          >
-            <Text style={styles.sendText}>➤</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={[styles.sendBtn, (sending || (!message.trim() && pendingMedia.length === 0)) && styles.sendBtnDisabled]}
+              onPress={sendMessage}
+              disabled={sending || (!message.trim() && pendingMedia.length === 0)}
+              accessibilityLabel="Send message"
+            >
+              <Text style={styles.sendText}>➤</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </KeyboardAvoidingView>
 
       <UserProfileSheet
@@ -842,6 +864,24 @@ function makeStyles(colors: Colors) {
       fontSize: 16,
       color: colors.onPrimary,
       marginLeft: 2,
+    },
+    mutedBar: {
+      padding: 16,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.brandSoft,
+    },
+    mutedTitle: {
+      fontFamily: fonts.bold,
+      fontSize: 15,
+      color: colors.brand,
+    },
+    mutedText: {
+      fontFamily: fonts.regular,
+      fontSize: 13,
+      lineHeight: 18,
+      color: colors.subtext,
+      marginTop: 2,
     },
     emptyText: {
       fontFamily: fonts.regular,

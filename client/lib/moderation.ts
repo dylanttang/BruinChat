@@ -32,3 +32,26 @@ export async function submitReport(
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return "submitted";
 }
+
+export const REASON_LABEL: Record<string, string> = Object.fromEntries(
+  REPORT_REASONS.map((r) => [r.value, r.label])
+);
+
+// Labels for entries in a user's moderation history (admin views).
+export const ACTION_LABEL: Record<string, string> = {
+  removed_message: "Message removed",
+  warned: "Warned",
+  muted: "Muted",
+  banned: "Banned",
+  unmuted: "Unmuted",
+  unbanned: "Unbanned",
+};
+
+export function timeAgo(iso: string): string {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}

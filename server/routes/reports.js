@@ -32,13 +32,42 @@ async function notifyAdmins(report, reporterId) {
 }
 
 // GET /api/reports/me — current user's submitted reports
+//
+// Each report includes `targetName` (the reported user, or the sender of the
+// reported message) and, for messages, a short `targetPreview`. Moderator
+// notes and actions are left out; reporters only see the status.
 router.get('/me', devAuth, async (req, res) => {
   try {
     const reports = await Report.find({ reporterId: req.user._id })
       .sort({ createdAt: -1 })
+      .select('targetType targetId reason details status createdAt resolvedAt')
       .lean();
 
-    return res.json(reports);
+    const messageIds = reports.filter((r) => r.targetType === 'message').map((r) => r.targetId);
+    const messages = await Message.find({ _id: { $in: messageIds } })
+      .select('text deletedAt senderId')
+      .populate('senderId', 'displayName')
+      .lean();
+    const messageById = Object.fromEntries(messages.map((m) => [m._id.toString(), m]));
+
+    const userIds = reports.filter((r) => r.targetType === 'user').map((r) => r.targetId);
+    const users = await User.find({ _id: { $in: userIds } }).select('displayName').lean();
+    const userById = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
+
+    const enriched = reports.map((report) => {
+      const id = report.targetId.toString();
+      if (report.targetType === 'message') {
+        const message = messageById[id];
+        return {
+          ...report,
+          targetName: message?.senderId?.displayName ?? null,
+          targetPreview: message?.deletedAt ? null : message?.text?.slice(0, 120) || null,
+        };
+      }
+      return { ...report, targetName: userById[id]?.displayName ?? null, targetPreview: null };
+    });
+
+    return res.json(enriched);
   } catch (err) {
     console.error('GET /api/reports/me error:', err);
     return res.status(500).json({ error: 'Failed to fetch reports' });

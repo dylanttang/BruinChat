@@ -73,7 +73,7 @@ export default function Welcome() {
 
       try {
         await signInWithGoogleIdToken(idToken);
-        router.replace("/auth/questionnaire/step1");
+        router.replace("/auth/terms");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Google sign-in failed";
         setAuthError(message);
@@ -106,7 +106,7 @@ export default function Welcome() {
   const pickUser = async (user: DevUser) => {
     await setDevUserId(user._id);
     setDevPickerVisible(false);
-    router.replace("/auth/questionnaire/step1");
+    router.replace("/auth/terms");
   };
 
   const signInWithGoogle = async () => {

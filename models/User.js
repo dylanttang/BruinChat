@@ -19,6 +19,10 @@ const userSchema = new mongoose.Schema(
     year: { type: String, default: null },
     major: { type: String, default: null },
     goal: { type: String, default: null },
+    // Set when the user agrees to the Terms of Service / Privacy Policy.
+    // termsVersion is compared against CURRENT_TERMS_VERSION on the server.
+    termsAcceptedAt: { type: Date, default: null },
+    termsVersion: { type: String, default: null },
   },
   { timestamps: true }
 );

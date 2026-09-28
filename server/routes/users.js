@@ -6,6 +6,7 @@ import Course from '../../models/Course.js';
 import Message from '../../models/Message.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { authRateLimit, enrollmentRateLimit } from '../middleware/rateLimit.js';
+import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
 
 const router = Router();
 
@@ -36,10 +37,41 @@ router.get('/me', devAuth, async (req, res) => {
       .lean();
 
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ user });
+    res.json({ user, currentTermsVersion: CURRENT_TERMS_VERSION });
   } catch (err) {
     console.error('GET /api/users/me error:', err);
     res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/me/terms — Record that the user accepted the current Terms
+//
+// Body: { version: string }  (must match CURRENT_TERMS_VERSION, so a client
+// can't accept a version it never showed the user)
+//
+// Response: { termsAcceptedAt, termsVersion }
+// ---------------------------------------------------------------------------
+router.put('/me/terms', devAuth, async (req, res) => {
+  try {
+    const { version } = req.body;
+    if (version !== CURRENT_TERMS_VERSION) {
+      return res.status(400).json({
+        error: 'Terms version is out of date',
+        currentTermsVersion: CURRENT_TERMS_VERSION,
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { termsAcceptedAt: new Date(), termsVersion: CURRENT_TERMS_VERSION },
+      { new: true }
+    ).lean();
+
+    res.json({ termsAcceptedAt: user.termsAcceptedAt, termsVersion: user.termsVersion });
+  } catch (err) {
+    console.error('PUT /api/users/me/terms error:', err);
+    res.status(500).json({ error: 'Failed to record terms acceptance' });
   }
 });
 

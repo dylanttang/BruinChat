@@ -5,7 +5,8 @@
   "scripts": {
     "server": "cd server && npm run dev",
     "client": "cd client && npx expo start",
-    "install:all": "cd server && npm install && cd ../client && npm install"
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "legal:sync": "node scripts/syncLegal.js"
   },
   "keywords": [],
   "author": "",

@@ -105,4 +105,4 @@ These Terms are governed by the laws of the State of California, without regard 
 
 ## 15. Contact us
 
-Questions or concerns about these Terms? Email us at **bruinchatdevx@gmail.com**.
+Questions or concerns about these Terms? Email us at **bchatdevx@gmail.com**.

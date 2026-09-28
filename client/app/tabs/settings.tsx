@@ -7,7 +7,7 @@ import { useTheme, fonts, ThemeMode, Colors } from "../../context/ThemeContext";
 import { clearAuthToken, clearDevUserId, apiFetch } from "../../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
-const SUPPORT_EMAIL = "bruinchatdevx@gmail.com";
+const SUPPORT_EMAIL = "bchatdevx@gmail.com";
 
 const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
   { label: "System default", value: "system" },

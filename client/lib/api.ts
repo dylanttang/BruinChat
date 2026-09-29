@@ -1,30 +1,15 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getStoredToken, removeStoredToken, storeToken } from "./tokenStorage";
 
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 
-const DEV_USER_KEY = "dev_user_id";
-const AUTH_TOKEN_KEY = "auth_token";
-
-export async function getAuthToken(): Promise<string | null> {
-  return AsyncStorage.getItem(AUTH_TOKEN_KEY);
-}
-
-export async function setAuthToken(token: string): Promise<void> {
-  await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
-  await clearDevUserId();
-}
-
-export async function clearAuthToken(): Promise<void> {
-  await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
-}
-
-// The old dev picker stored a raw user ID under this key and sent it as an
-// x-user-id header. The server no longer accepts that; this only clears any
-// leftover value on sign out.
-export async function clearDevUserId(): Promise<void> {
-  await AsyncStorage.removeItem(DEV_USER_KEY);
-}
+// The login token lives in the iOS Keychain / Android Keystore via
+// expo-secure-store (memory only on web); see tokenStorage.ts. Tokens left
+// in plaintext AsyncStorage by older builds are deleted, not migrated, so
+// those users sign in once more.
+export const getAuthToken = getStoredToken;
+export const setAuthToken = storeToken;
+export const clearAuthToken = removeStoredToken;
 
 export async function signInWithGoogleIdToken(idToken: string) {
   const res = await fetch(`${API_URL}/api/auth/google`, {

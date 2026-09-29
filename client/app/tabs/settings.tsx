@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, fonts, ThemeMode, Colors } from "../../context/ThemeContext";
-import { clearAuthToken, clearDevUserId, apiFetch } from "../../lib/api";
+import { clearAuthToken, apiFetch } from "../../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
 const SUPPORT_EMAIL = "bchatdevx@gmail.com";
@@ -93,7 +93,6 @@ export default function Settings() {
         style: "destructive",
         onPress: async () => {
           await clearAuthToken();
-          await clearDevUserId();
           router.replace("/auth/welcome/welcome");
         },
       },
@@ -113,7 +112,6 @@ export default function Settings() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await AsyncStorage.removeItem(NOTIF_KEY);
       await clearAuthToken();
-      await clearDevUserId();
       closeDeleteModal();
       router.replace("/auth/welcome/welcome");
     } catch (err) {

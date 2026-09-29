@@ -81,7 +81,6 @@ router.post('/google', authRateLimit, async (req, res) => {
       $or: [
         { googleId },
         { email },
-        { username },
       ],
     });
 
@@ -93,8 +92,9 @@ router.post('/google', authRateLimit, async (req, res) => {
     }
 
     if (!user) {
+      const usernameTaken = await User.exists({ username });
       user = new User({
-        username,
+        username: usernameTaken ? `${username.slice(0, 38)}_${googleId.slice(-24)}` : username,
         email,
         googleId,
         emailVerified: true,
@@ -102,6 +102,9 @@ router.post('/google', authRateLimit, async (req, res) => {
         avatarUrl,
       });
     } else {
+      if (user.googleId && user.googleId !== googleId) {
+        return res.status(401).json({ error: 'Google identity does not match this account' });
+      }
       user.email = email;
       user.googleId = googleId;
       user.emailVerified = true;
@@ -109,9 +112,11 @@ router.post('/google', authRateLimit, async (req, res) => {
       if (avatarUrl) user.avatarUrl = avatarUrl;
     }
 
+    if (user.bannedAt) return res.status(403).json({ error: 'Your account has been banned' });
     await user.save();
 
     const token = signAppToken(user);
+    req.user = user;
     res.json({ token, user: user.toObject() });
   } catch (err) {
     console.error('POST /api/auth/google error:', err);

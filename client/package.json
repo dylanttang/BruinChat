@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "postinstall": "patch-package --error-on-fail",
-    "test:security": "node scripts/check-security-dependencies.cjs"
+    "test:security": "node scripts/check-token-storage.cjs && node scripts/check-security-dependencies.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/quicksand": "^0.4.1",
@@ -28,6 +28,7 @@
     "expo-linear-gradient": "~15.0.8",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.24",
+    "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
     "expo-video-thumbnails": "~10.0.8",
     "expo-web-browser": "~15.0.11",

@@ -1,16 +1,13 @@
-import { validateMessageLengths, validString } from '../utils/inputLimits.js';
 import { Router } from 'express';
-import fs from 'fs';
 import mongoose from 'mongoose';
-import multer from 'multer';
 import path from 'path';
-import crypto from 'crypto';
 import Chat from '../../models/Chat.js';
 import Message from '../../models/Message.js';
 import User from '../../models/User.js';
 import { devAuth } from '../middleware/devAuth.js';
+import { serializeMedia } from '../utils/media.js';
+import { validateMessage, validateText } from '../utils/validation.js';
 import { sendPush } from '../utils/push.js';
-import { deleteMessageMediaFiles, uploadDir } from '../utils/media.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
 import { postingBlock } from '../utils/moderation.js';
 
@@ -18,21 +15,6 @@ const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
 const CHAT_LIST_MAX_LIMIT = 50;
 const MAX_REACTION_LENGTH = 16;
-const MAX_MEDIA_SIZE = 10 * 1024 * 1024;
-const allowedMediaTypes = new Map([
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-].map((mimeType) => [mimeType, 'image']));
-[
-  'video/mp4',
-  'video/quicktime',
-  'video/x-m4v',
-  'video/webm',
-].forEach((mimeType) => allowedMediaTypes.set(mimeType, 'video'));
 const mediaLabelByType = {
   image: '[Photo]',
   video: '[Video]',
@@ -40,44 +22,17 @@ const mediaLabelByType = {
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']);
 const videoExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm']);
 
-fs.mkdirSync(uploadDir, { recursive: true });
-
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: uploadDir,
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
-      cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
-    },
-  }),
-  limits: {
-    fileSize: MAX_MEDIA_SIZE,
-    files: 10,
-  },
-  fileFilter: (_req, file, cb) => {
-    if (!getMediaKind(file.mimetype)) {
-      cb(new Error('Only image and video uploads are allowed'));
-      return;
-    }
-    cb(null, true);
-  },
-});
-
 function parseLimit(value, defaultLimit, maxLimit) {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return defaultLimit;
   return Math.min(Math.max(parsed, 1), maxLimit);
 }
 
-function populateMessage(query) {
+function populateMessage(query, chatId) {
   return query
     .populate('senderId', '_id displayName avatarUrl')
     .populate('reactions.userId', '_id displayName')
-    .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } });
-}
-
-function getMediaKind(mimeType) {
-  return allowedMediaTypes.get(mimeType);
+    .populate({ path: 'replyTo', match: { chatId }, populate: { path: 'senderId', select: '_id displayName' } });
 }
 
 function getMessageMediaLabel(message) {
@@ -90,35 +45,6 @@ function inferMediaKindFromUrl(url) {
   if (videoExtensions.has(ext)) return 'video';
   if (imageExtensions.has(ext)) return 'image';
   return 'image';
-}
-
-function deleteUploadedFiles(files = []) {
-  for (const file of files) {
-    if (file?.path) {
-      fs.unlink(file.path, () => {});
-    }
-  }
-}
-
-
-async function requireChatMember(chatId, userId) {
-  if (!mongoose.Types.ObjectId.isValid(chatId)) {
-    return { status: 400, error: 'Invalid chat ID' };
-  }
-
-  const chat = await Chat.findById(chatId).lean();
-  if (!chat) {
-    return { status: 404, error: 'Chat not found' };
-  }
-
-  const isMember = chat.members.some(
-    (memberId) => memberId.toString() === userId.toString()
-  );
-  if (!isMember) {
-    return { status: 403, error: 'You are not a member of this chat' };
-  }
-
-  return { chat };
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +271,7 @@ router.get('/:id/messages', devAuth, async (req, res) => {
       .limit(limit + 1)
       .populate('senderId', '_id displayName avatarUrl')
       .populate('reactions.userId', '_id displayName')
-      .populate({ path: 'replyTo', populate: { path: 'senderId', select: '_id displayName' } })
+      .populate({ path: 'replyTo', match: { chatId }, populate: { path: 'senderId', select: '_id displayName' } })
       .lean();
 
     const hasMore = messages.length > limit;
@@ -394,8 +320,11 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
 
     // Validate body
     const { text, mediaUrl, mediaUrls, mediaTypes, replyTo } = req.body;
-    const bodyError = validateMessageLengths(req.body);
+    const bodyError = validateMessage(req.body, req.user._id);
     if (bodyError) return res.status(400).json({ error: bodyError });
+    if (replyTo && !(await Message.exists({ _id: replyTo, chatId, deletedAt: null }))) {
+      return res.status(400).json({ error: 'Reply must reference a message in this chat' });
+    }
     const cleanedMediaUrls = Array.isArray(mediaUrls)
       ? mediaUrls.filter((url) => typeof url === 'string' && url.trim()).map((url) => url.trim())
       : [];
@@ -423,10 +352,10 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
     await Chat.findByIdAndUpdate(chatId, { lastMessageAt: message.createdAt });
 
     // Populate sender info before returning
-    const populated = await populateMessage(Message.findById(message._id)).lean();
+    const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('newMessage', populated);
+      req.io.to(chatId).emit('newMessage', serializeMedia(populated));
     }
 
     // Fan out push notifications to members with tokens, excluding sender
@@ -468,65 +397,6 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/chats/:id/messages/media — Upload media and create one message
-// ---------------------------------------------------------------------------
-router.post('/:id/messages/media', devAuth, messageSendRateLimit, (req, res) => {
-  upload.array('media', 10)(req, res, async (uploadErr) => {
-    if (uploadErr) {
-      deleteUploadedFiles(req.files);
-      const status = uploadErr instanceof multer.MulterError ? 400 : 415;
-      return res.status(status).json({ error: uploadErr.message || 'Failed to upload media' });
-    }
-
-    try {
-      const blocked = postingBlock(req.user);
-      if (blocked) {
-        deleteUploadedFiles(req.files);
-        return res.status(blocked.status).json(blocked.body);
-      }
-
-      const chatId = req.params.id;
-      const membership = await requireChatMember(chatId, req.user._id);
-      if (membership.error) {
-        deleteUploadedFiles(req.files);
-        return res.status(membership.status).json({ error: membership.error });
-      }
-
-      const files = req.files || [];
-      if (files.length === 0) {
-        return res.status(400).json({ error: 'At least one media file is required' });
-      }
-
-      const mediaUrls = files.map((file) => `/uploads/chat-photos/${file.filename}`);
-      const mediaTypes = files.map((file) => getMediaKind(file.mimetype) || inferMediaKindFromUrl(file.filename));
-      const { replyTo } = req.body;
-      const message = await Message.create({
-        chatId,
-        senderId: req.user._id,
-        text: '',
-        mediaUrl: mediaUrls[0],
-        mediaUrls,
-        mediaTypes,
-        ...(replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? { replyTo } : {}),
-      });
-
-      await Chat.findByIdAndUpdate(chatId, { lastMessageAt: message.createdAt });
-      const populated = await populateMessage(Message.findById(message._id)).lean();
-
-      if (req.io) {
-        req.io.to(chatId).emit('newMessage', populated);
-      }
-
-      res.status(201).json({ message: populated });
-    } catch (err) {
-      deleteUploadedFiles(req.files);
-      console.error('POST /api/chats/:id/messages/media error:', err);
-      res.status(500).json({ error: err.message || 'Failed to upload media' });
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
 // POST /api/chats/:chatId/messages/:id/react — Toggle a reaction on a message
 //
 // Body: { emoji: string }
@@ -561,6 +431,11 @@ router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (re
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
+    const accessChat = await Chat.findById(chatId).lean();
+    if (!accessChat || !accessChat.members.some((member) => member.toString() === req.user._id.toString())) {
+      return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
     const message = await Message.findOne({ _id: messageId, chatId });
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
@@ -582,10 +457,10 @@ router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (re
 
     await message.save();
 
-    const populated = await populateMessage(Message.findById(message._id)).lean();
+    const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('messageReacted', populated);
+      req.io.to(chatId).emit('messageReacted', serializeMedia(populated));
     }
 
     res.json({ message: populated });
@@ -624,10 +499,12 @@ router.delete('/:id/members/me', devAuth, async (req, res) => {
     // If chat is course-linked (!isGroup) and empty, delete it
     if (!chat.isGroup && chat.members.length === 0) {
       await Chat.findByIdAndDelete(chatId);
+      req.io?.in(`user:${userIdStr}`).socketsLeave(chatId);
       await Message.deleteMany({ chatId });
       return res.json({ message: 'Left chat and deleted empty course chat' });
     } else {
       await chat.save();
+      req.io?.in(`user:${userIdStr}`).socketsLeave(chatId);
       return res.json({ message: 'Successfully left chat' });
     }
   } catch (err) {
@@ -650,6 +527,11 @@ router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid ID' });
     }
 
+    const accessChat = await Chat.findById(chatId).lean();
+    if (!accessChat || !accessChat.members.some((member) => member.toString() === req.user._id.toString())) {
+      return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
     const message = await Message.findOne({ _id: messageId, chatId });
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
@@ -660,7 +542,7 @@ router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
     }
 
     const { text } = req.body;
-    if (!validString(text, 4000) || !text.trim()) {
+    if (validateText(text) || !text.trim()) {
       return res.status(400).json({ error: 'Message text must contain 1 to 4000 characters' });
     }
 
@@ -668,10 +550,10 @@ router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
     message.editedAt = new Date();
     await message.save();
 
-    const populated = await populateMessage(Message.findById(message._id)).lean();
+    const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('messageEdited', populated);
+      req.io.to(chatId).emit('messageEdited', serializeMedia(populated));
     }
 
     res.json({ message: populated });
@@ -692,6 +574,11 @@ router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid ID' });
     }
 
+    const accessChat = await Chat.findById(chatId).lean();
+    if (!accessChat || !accessChat.members.some((member) => member.toString() === req.user._id.toString())) {
+      return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
     const message = await Message.findOne({ _id: messageId, chatId });
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
@@ -701,7 +588,6 @@ router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
       return res.status(403).json({ error: 'Only the sender can delete this message' });
     }
 
-    deleteMessageMediaFiles(message);
     message.text = '';
     message.mediaUrl = '';
     message.mediaUrls = [];
@@ -709,10 +595,10 @@ router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
     message.deletedAt = new Date();
     await message.save();
 
-    const populated = await populateMessage(Message.findById(message._id)).lean();
+    const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('messageDeleted', populated);
+      req.io.to(chatId).emit('messageDeleted', serializeMedia(populated));
     }
 
     res.json({ message: populated });

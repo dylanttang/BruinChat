@@ -3,7 +3,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { clearAuthToken, clearDevUserId } from "../lib/api";
+import { clearAuthToken } from "../lib/api";
 import { Colors, fonts, useTheme } from "../context/ThemeContext";
 
 const SUPPORT_EMAIL = "bchatdevx@gmail.com";
@@ -17,7 +17,6 @@ export default function Banned() {
 
   const signOut = async () => {
     await clearAuthToken();
-    await clearDevUserId();
     router.replace("/auth/welcome/welcome");
   };
 

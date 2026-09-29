@@ -1,4 +1,3 @@
-import { PROFILE_LIMITS, validString } from '../utils/inputLimits.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import User from '../../models/User.js';
@@ -6,30 +5,12 @@ import Chat from '../../models/Chat.js';
 import Course from '../../models/Course.js';
 import Message from '../../models/Message.js';
 import Feedback from '../../models/Feedback.js';
-import { v2 as cloudinary } from 'cloudinary';
-import { deleteMessageMediaFiles } from '../utils/media.js';
 import { devAuth } from '../middleware/devAuth.js';
-import { authRateLimit, enrollmentRateLimit } from '../middleware/rateLimit.js';
+import { enrollmentRateLimit } from '../middleware/rateLimit.js';
 import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
+import { PROFILE_LIMITS, validString, validCloudinaryUrl } from '../utils/validation.js';
 
 const router = Router();
-
-// ---------------------------------------------------------------------------
-// GET /api/users/dev-list — List all users (for dev user picker before OAuth)
-//
-// TEMPORARY: Remove this once Google OAuth is implemented.
-// ---------------------------------------------------------------------------
-router.get('/dev-list', authRateLimit, async (req, res) => {
-  try {
-    const users = await User.find({ deletedAt: null }, '_id displayName username')
-      .sort({ displayName: 1 })
-      .lean();
-    res.json({ users });
-  } catch (err) {
-    console.error('GET /api/users/dev-list error:', err);
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
-});
 
 // ---------------------------------------------------------------------------
 // GET /api/users/me — Return the current user with populated courses
@@ -152,10 +133,14 @@ router.put('/me/courses', devAuth, enrollmentRateLimit, async (req, res) => {
 
     // For each removed course: remove user from the chat's members
     if (removed.length > 0) {
+      const removedChats = await Chat.find({ course: { $in: removed }, members: user._id }).select('_id').lean();
       await Chat.updateMany(
         { course: { $in: removed } },
         { $pull: { members: user._id } }
       );
+      for (const chat of removedChats) {
+        req.io?.in(`user:${user._id}`).socketsLeave(chat._id.toString());
+      }
     }
 
     // Update the user's courses array
@@ -223,8 +208,7 @@ router.put('/me/profile', devAuth, async (req, res) => {
   try {
     const { year, major, goal } = req.body;
     for (const field of ['year', 'major', 'goal']) {
-      const value = req.body[field];
-      if (value !== undefined && value !== null && !validString(value, PROFILE_LIMITS[field])) {
+      if (req.body[field] !== undefined && req.body[field] !== null && !validString(req.body[field], PROFILE_LIMITS[field])) {
         return res.status(400).json({ error: `${field} must be a string of at most ${PROFILE_LIMITS[field]} characters or null` });
       }
     }
@@ -270,7 +254,7 @@ router.put('/me/avatar', devAuth, async (req, res) => {
   try {
     const { avatarUrl } = req.body;
 
-    if (!validString(avatarUrl, PROFILE_LIMITS.avatarUrl) || !avatarUrl.startsWith('https://res.cloudinary.com/')) {
+    if (!validCloudinaryUrl(avatarUrl, 'avatars', req.user._id)) {
       return res.status(400).json({ error: 'avatarUrl must be a Cloudinary URL' });
     }
 
@@ -381,24 +365,6 @@ router.delete('/:id/block', devAuth, async (req, res) => {
   }
 });
 
-// Best-effort removal of an avatar we host on Cloudinary. Google profile
-// photo URLs aren't ours, so those are skipped.
-async function deleteCloudinaryAvatar(avatarUrl) {
-  const match = /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/(?:v\d+\/)?(avatars\/[^.]+)/.exec(avatarUrl || '');
-  if (!match || !process.env.CLOUDINARY_API_SECRET) return;
-
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-  });
-  try {
-    await cloudinary.uploader.destroy(match[1]);
-  } catch (err) {
-    console.error('Failed to delete Cloudinary avatar:', err);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // DELETE /api/users/me — Permanently delete the current user's account
 //
@@ -422,10 +388,6 @@ router.delete('/me', devAuth, async (req, res) => {
     const userId = req.user._id;
     const now = new Date();
 
-    const sentMedia = await Message.find({ senderId: userId })
-      .select('mediaUrl mediaUrls')
-      .lean();
-    sentMedia.forEach(deleteMessageMediaFiles);
 
     await Message.updateMany(
       { senderId: userId, deletedAt: null },
@@ -440,7 +402,6 @@ router.delete('/me', devAuth, async (req, res) => {
       { $pull: { members: userId, archivedBy: userId } }
     );
     await Feedback.deleteMany({ userId });
-    await deleteCloudinaryAvatar(req.user.avatarUrl);
 
     const tombstone = {
       $set: {

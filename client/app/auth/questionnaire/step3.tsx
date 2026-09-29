@@ -15,7 +15,8 @@ import { useState, useEffect, useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { apiFetch } from "../../../lib/api";
-import { useTheme, Colors } from "../../../context/ThemeContext";
+import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
+import GradientButton from "../../../components/GradientButton";
 
 const MAX_COURSES = 8;
 
@@ -144,7 +145,7 @@ export default function AddCoursesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={24} color={colors.text} />
+        <Ionicons name="arrow-back" size={24} color={colors.brand} />
       </TouchableOpacity>
 
       <Text style={styles.title}>Add your Enrolled Courses</Text>
@@ -173,23 +174,18 @@ export default function AddCoursesScreen() {
             ) : (
               <TouchableOpacity style={styles.addClassCard} onPress={() => setModalVisible(true)}>
                 <Text style={styles.addClassText}>Add Class</Text>
-                <Ionicons name="add" size={20} color={colors.mutedText} />
+                <Ionicons name="add" size={20} color={colors.brand} />
               </TouchableOpacity>
             )}
 
             <Text style={styles.addMore}>Add More Classes</Text>
 
-            <TouchableOpacity
-              style={[styles.continueBtn, saving && { opacity: 0.5 }]}
+            <GradientButton
+              label="Continue"
               onPress={saveAndContinue}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.continueText}>Continue</Text>
-              )}
-            </TouchableOpacity>
+              loading={saving}
+              style={styles.continueBtn}
+            />
           </>
         }
       />
@@ -252,7 +248,7 @@ function makeStyles(colors: Colors) {
     },
     title: {
       fontSize: 28,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
       textAlign: "center",
       marginVertical: 40,
       color: colors.text,
@@ -268,11 +264,12 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.card,
     },
     courseName: {
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       fontSize: 16,
       color: colors.text,
     },
     subtitle: {
+      fontFamily: fonts.regular,
       color: colors.subtext,
     },
     removeBtn: {
@@ -284,8 +281,9 @@ function makeStyles(colors: Colors) {
       justifyContent: "center",
     },
     addClassCard: {
-      borderWidth: 1,
-      borderColor: colors.border,
+      borderWidth: 1.5,
+      borderStyle: "dashed",
+      borderColor: colors.brand,
       borderRadius: 20,
       padding: 16,
       flexDirection: "row",
@@ -294,27 +292,21 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.card,
     },
     addClassText: {
-      color: colors.mutedText,
+      fontFamily: fonts.regular,
+      color: colors.brand,
     },
     addMore: {
+      fontFamily: fonts.regular,
       textAlign: "right",
       marginBottom: 30,
       color: colors.subtext,
     },
     continueBtn: {
-      backgroundColor: "#777",
-      padding: 14,
-      borderRadius: 20,
-      alignItems: "center",
       marginBottom: 12,
-    },
-    continueText: {
-      color: "white",
-      fontWeight: "600",
     },
     overlay: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.4)",
+      backgroundColor: colors.overlay,
       justifyContent: "center",
       padding: 20,
     },
@@ -325,7 +317,7 @@ function makeStyles(colors: Colors) {
     },
     modalTitle: {
       fontSize: 22,
-      fontWeight: "700",
+      fontFamily: fonts.bold,
       textAlign: "center",
       marginBottom: 20,
       color: colors.text,
@@ -342,6 +334,7 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.background,
     },
     searchResult: {
+      fontFamily: fonts.regular,
       paddingVertical: 8,
       fontSize: 16,
       color: colors.text,
@@ -351,6 +344,7 @@ function makeStyles(colors: Colors) {
       alignItems: "center",
     },
     cancelText: {
+      fontFamily: fonts.regular,
       color: colors.text,
     },
   });

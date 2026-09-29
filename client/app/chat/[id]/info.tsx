@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
-import { useTheme, Colors } from "../../../context/ThemeContext";
+import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
 
 type Member = {
   _id: string;
@@ -135,12 +135,13 @@ function makeStyles(colors: Colors) {
       borderBottomColor: colors.border,
     },
     back: {
+      fontFamily: fonts.regular,
       fontSize: 22,
-      color: colors.text,
+      color: colors.brand,
     },
     title: {
       fontSize: 18,
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       flex: 1,
       textAlign: "center",
       paddingHorizontal: 12,
@@ -158,7 +159,7 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.card,
     },
     sectionTitle: {
-      fontWeight: "600",
+      fontFamily: fonts.medium,
       fontSize: 16,
       marginBottom: 10,
       color: colors.text,
@@ -172,10 +173,11 @@ function makeStyles(colors: Colors) {
     },
     label: {
       fontSize: 14,
-      fontWeight: "500",
+      fontFamily: fonts.medium,
       color: colors.text,
     },
     value: {
+      fontFamily: fonts.regular,
       fontSize: 14,
       color: colors.subtext,
     },
@@ -190,17 +192,18 @@ function makeStyles(colors: Colors) {
       width: 36,
       height: 36,
       backgroundColor: colors.avatarBg,
-      borderRadius: 8,
+      borderRadius: 18,
       marginRight: 12,
     },
     memberName: {
+      fontFamily: fonts.regular,
       fontSize: 14,
       color: colors.text,
       flex: 1,
     },
     leaveButton: {
       borderWidth: 1,
-      borderColor: "red",
+      borderColor: colors.danger,
       borderRadius: 14,
       paddingVertical: 14,
       alignItems: "center",
@@ -208,8 +211,8 @@ function makeStyles(colors: Colors) {
     },
     leaveText: {
       fontSize: 16,
-      color: "red",
-      fontWeight: "600",
+      color: colors.danger,
+      fontFamily: fonts.medium,
     },
   });
 }

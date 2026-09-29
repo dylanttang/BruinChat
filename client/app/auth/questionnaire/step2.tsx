@@ -9,9 +9,13 @@ import {
   ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
+import GradientButton from "../../../components/GradientButton";
 
 export default function Step2() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const params = useLocalSearchParams<{ year?: string }>();
   const [major, setMajor] = useState("");
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
@@ -40,6 +44,7 @@ export default function Step2() {
           value={major}
           onChangeText={setMajor}
           placeholder="e.g. Computer Science"
+          placeholderTextColor={colors.mutedText}
           style={styles.input}
           autoCapitalize="words"
         />
@@ -62,9 +67,10 @@ export default function Step2() {
           })}
         </View>
 
-        <TouchableOpacity
-          style={[styles.button, !selectedGoal && styles.buttonDisabled]}
+        <GradientButton
+          label="Continue to Courses"
           disabled={!selectedGoal}
+          style={styles.button}
           onPress={() =>
             router.push({
               pathname: "/auth/questionnaire/step3",
@@ -75,87 +81,84 @@ export default function Step2() {
               },
             })
           }
-        >
-          <Text style={styles.buttonText}>Continue to Courses</Text>
-        </TouchableOpacity>
+        />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  content: {
-    padding: 24,
-    paddingBottom: 40,
-  },
-  step: {
-    marginTop: 12,
-    color: "#888",
-    fontSize: 13,
-  },
-  title: {
-    marginTop: 16,
-    fontSize: 30,
-    fontWeight: "700",
-  },
-  subtitle: {
-    marginTop: 10,
-    color: "#666",
-    fontSize: 15,
-  },
-  sectionLabel: {
-    marginTop: 26,
-    marginBottom: 8,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#222",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-  },
-  options: {
-    gap: 10,
-  },
-  option: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-  },
-  optionSelected: {
-    borderColor: "#555",
-    backgroundColor: "#f3f3f3",
-  },
-  optionText: {
-    fontSize: 15,
-    color: "#222",
-  },
-  optionTextSelected: {
-    fontWeight: "600",
-  },
-  button: {
-    marginTop: 28,
-    backgroundColor: "#777",
-    borderRadius: 18,
-    alignItems: "center",
-    paddingVertical: 14,
-  },
-  buttonDisabled: {
-    opacity: 0.45,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: 24,
+      paddingBottom: 40,
+    },
+    step: {
+      marginTop: 12,
+      fontFamily: fonts.medium,
+      color: colors.brand,
+      fontSize: 13,
+    },
+    title: {
+      marginTop: 16,
+      fontFamily: fonts.bold,
+      fontSize: 30,
+      color: colors.text,
+    },
+    subtitle: {
+      marginTop: 10,
+      fontFamily: fonts.regular,
+      color: colors.subtext,
+      fontSize: 15,
+    },
+    sectionLabel: {
+      marginTop: 26,
+      marginBottom: 8,
+      fontFamily: fonts.bold,
+      fontSize: 16,
+      color: colors.text,
+    },
+    input: {
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontFamily: fonts.regular,
+      fontSize: 15,
+      color: colors.text,
+      backgroundColor: colors.card,
+    },
+    options: {
+      gap: 10,
+    },
+    option: {
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      borderRadius: 16,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      backgroundColor: colors.card,
+    },
+    optionSelected: {
+      borderColor: colors.brand,
+      backgroundColor: colors.brandSoft,
+    },
+    optionText: {
+      fontFamily: fonts.regular,
+      fontSize: 15,
+      color: colors.text,
+    },
+    optionTextSelected: {
+      fontFamily: fonts.bold,
+      color: colors.brand,
+    },
+    button: {
+      marginTop: 28,
+    },
+  });
+}

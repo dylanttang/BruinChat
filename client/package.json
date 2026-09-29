@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "patch-package --error-on-fail",
+    "test:security": "node scripts/check-token-storage.cjs && node scripts/check-security-dependencies.cjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
@@ -23,6 +25,7 @@
     "expo-image-picker": "~17.0.11",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.24",
+    "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
     "expo-video-thumbnails": "^55.0.14",
     "expo-web-browser": "~15.0.11",
@@ -36,7 +39,17 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "postcss": "^8.5.28",
+    "ws@^7.0.0": "^7.5.13",
+    "image-size": "^2.0.4",
+    "xcode": {
+      "uuid": "^11.1.1"
+    },
+    "decode-uri-component": "^0.5.0"
+  }
 }

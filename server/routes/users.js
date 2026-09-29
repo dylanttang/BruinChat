@@ -5,26 +5,11 @@ import Chat from '../../models/Chat.js';
 import Course from '../../models/Course.js';
 import Message from '../../models/Message.js';
 import { devAuth } from '../middleware/devAuth.js';
-import { authRateLimit, enrollmentRateLimit } from '../middleware/rateLimit.js';
+import { enrollmentRateLimit } from '../middleware/rateLimit.js';
+
+import { PROFILE_LIMITS, validString, validCloudinaryUrl } from '../utils/validation.js';
 
 const router = Router();
-
-// ---------------------------------------------------------------------------
-// GET /api/users/dev-list — List all users (for dev user picker before OAuth)
-//
-// TEMPORARY: Remove this once Google OAuth is implemented.
-// ---------------------------------------------------------------------------
-router.get('/dev-list', authRateLimit, async (req, res) => {
-  try {
-    const users = await User.find({}, '_id displayName username')
-      .sort({ displayName: 1 })
-      .lean();
-    res.json({ users });
-  } catch (err) {
-    console.error('GET /api/users/dev-list error:', err);
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
-});
 
 // ---------------------------------------------------------------------------
 // GET /api/users/me — Return the current user with populated courses
@@ -113,10 +98,14 @@ router.put('/me/courses', devAuth, enrollmentRateLimit, async (req, res) => {
 
     // For each removed course: remove user from the chat's members
     if (removed.length > 0) {
+      const removedChats = await Chat.find({ course: { $in: removed }, members: user._id }).select('_id').lean();
       await Chat.updateMany(
         { course: { $in: removed } },
         { $pull: { members: user._id } }
       );
+      for (const chat of removedChats) {
+        req.io?.in(`user:${user._id}`).socketsLeave(chat._id.toString());
+      }
     }
 
     // Update the user's courses array
@@ -168,7 +157,7 @@ router.put('/me/notifications', devAuth, async (req, res) => {
       return res.status(400).json({ error: 'No valid fields provided' });
     }
 
-    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true, runValidators: true })
       .select('notifEnabled classNotif replyNotif')
       .lean();
 
@@ -183,12 +172,17 @@ router.put('/me/notifications', devAuth, async (req, res) => {
 router.put('/me/profile', devAuth, async (req, res) => {
   try {
     const { year, major, goal } = req.body;
+    for (const field of ['year', 'major', 'goal']) {
+      if (req.body[field] !== undefined && req.body[field] !== null && !validString(req.body[field], PROFILE_LIMITS[field])) {
+        return res.status(400).json({ error: `${field} must be a string of at most ${PROFILE_LIMITS[field]} characters or null` });
+      }
+    }
     const update = {};
     if (year !== undefined) update.year = year;
     if (major !== undefined) update.major = major;
     if (goal !== undefined) update.goal = goal;
 
-    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true, runValidators: true })
       .populate('courses')
       .lean();
     res.json({ user });
@@ -203,14 +197,14 @@ router.put('/me/push-token', devAuth, async (req, res) => {
   try {
     const { pushToken } = req.body;
 
-    if (pushToken !== null && typeof pushToken !== 'string') {
+    if (pushToken !== null && !validString(pushToken, PROFILE_LIMITS.pushToken)) {
       return res.status(400).json({ error: 'pushToken must be a string or null' });
     }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { pushToken: pushToken ?? null },
-      { new: true }
+      { new: true, runValidators: true }
     ).lean();
 
     return res.json({ pushToken: user.pushToken });
@@ -225,14 +219,14 @@ router.put('/me/avatar', devAuth, async (req, res) => {
   try {
     const { avatarUrl } = req.body;
 
-    if (typeof avatarUrl !== 'string' || !avatarUrl.startsWith('https://res.cloudinary.com/')) {
+    if (!validCloudinaryUrl(avatarUrl, 'avatars', req.user._id)) {
       return res.status(400).json({ error: 'avatarUrl must be a Cloudinary URL' });
     }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { avatarUrl },
-      { new: true }
+      { new: true, runValidators: true }
     ).lean();
 
     return res.json({ avatarUrl: user.avatarUrl });

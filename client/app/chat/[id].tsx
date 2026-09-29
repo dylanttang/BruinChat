@@ -19,8 +19,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
-import { apiFetch, getDevUserId } from "../../lib/api";
+import { apiFetch } from "../../lib/api";
 import { useTheme, Colors } from "../../context/ThemeContext";
+import { uploadToCloudinary } from "../../lib/cloudinary";
 import { createSocket } from "../../lib/socket";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
@@ -215,12 +216,12 @@ export default function ChatScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [userId, chatRes, msgsRes] = await Promise.all([
-        getDevUserId(),
+      const [userRes, chatRes, msgsRes] = await Promise.all([
+        apiFetch("/api/users/me"),
         apiFetch(`/api/chats/${id}`),
         apiFetch(`/api/chats/${id}/messages`),
       ]);
-      setCurrentUserId(userId);
+      if (userRes.ok) setCurrentUserId((await userRes.json()).user._id);
 
       if (chatRes.ok) {
         const data = await chatRes.json();
@@ -398,21 +399,17 @@ export default function ChatScreen() {
       const newMessages: Message[] = [];
 
       if (pendingMedia.length > 0) {
-        const formData = new FormData();
-        if (replyingTo) {
-          formData.append("replyTo", replyingTo._id);
+        const mediaUrls = [];
+        for (const item of pendingMedia) {
+          mediaUrls.push(await uploadToCloudinary(item.uri, "messages", item));
         }
-        pendingMedia.forEach((item, index) => {
-          formData.append("media", {
-            uri: item.uri,
-            name: item.fileName || `${item.type}-${index + 1}.${item.type === "video" ? "mp4" : "jpg"}`,
-            type: item.mimeType || (item.type === "video" ? "video/mp4" : "image/jpeg"),
-          } as any);
-        });
-
-        const mediaRes = await apiFetch(`/api/chats/${id}/messages/media`, {
+        const mediaRes = await apiFetch(`/api/chats/${id}/messages`, {
           method: "POST",
-          body: formData,
+          body: JSON.stringify({
+            mediaUrls,
+            mediaTypes: pendingMedia.map((item) => item.type),
+            ...(replyingTo ? { replyTo: replyingTo._id } : {}),
+          }),
         });
         if (!mediaRes.ok) throw new Error(`HTTP ${mediaRes.status}`);
         const mediaData = await mediaRes.json();
@@ -647,6 +644,7 @@ export default function ChatScreen() {
             placeholderTextColor={colors.mutedText}
             style={styles.input}
             value={message}
+            maxLength={4000}
             onChangeText={handleMessageChange}
             onSubmitEditing={sendMessage}
             editable={!sending}

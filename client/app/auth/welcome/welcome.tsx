@@ -4,9 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Modal,
-  FlatList,
-  Pressable,
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
@@ -14,16 +11,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
-import { apiFetch, setDevUserId, signInWithGoogleIdToken } from "../../../lib/api";
+import { signInWithGoogleIdToken } from "../../../lib/api";
 import { useTheme, Colors } from "../../../context/ThemeContext";
 
 WebBrowser.maybeCompleteAuthSession();
-
-type DevUser = {
-  _id: string;
-  displayName: string;
-  username: string;
-};
 
 export default function Welcome() {
   const router = useRouter();
@@ -35,9 +26,6 @@ export default function Welcome() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
 
-  const [devPickerVisible, setDevPickerVisible] = useState(false);
-  const [devUsers, setDevUsers] = useState<DevUser[] | null>(null);
-  const [loadingUsers, setLoadingUsers] = useState(false);
   const isGoogleConfigured = Boolean(
     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
       process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ||
@@ -82,30 +70,6 @@ export default function Welcome() {
 
     finishGoogleSignIn();
   }, [response, router]);
-
-  const openDevPicker = async () => {
-    setDevPickerVisible(true);
-    if (devUsers !== null) return;
-
-    setLoadingUsers(true);
-    try {
-      const res = await apiFetch("/api/users/dev-list");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setDevUsers(data.users);
-    } catch (err) {
-      console.error("Failed to load dev users:", err);
-      setDevUsers([]);
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
-  const pickUser = async (user: DevUser) => {
-    await setDevUserId(user._id);
-    setDevPickerVisible(false);
-    router.replace("/auth/questionnaire/step1");
-  };
 
   const signInWithGoogle = async () => {
     setAuthError(null);
@@ -159,53 +123,6 @@ export default function Welcome() {
         )}
       </TouchableOpacity>
 
-      {/* TODO: Remove once every environment has Google OAuth client IDs. */}
-      <TouchableOpacity style={styles.devBtn} onPress={openDevPicker}>
-        <Text style={styles.devText}>Skip (Dev)</Text>
-      </TouchableOpacity>
-
-      <Modal
-        transparent
-        visible={devPickerVisible}
-        animationType="fade"
-        onRequestClose={() => setDevPickerVisible(false)}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Pick a dev user</Text>
-            <Text style={styles.modalSubtitle}>
-              Temporary - for testing until every OAuth client is configured.
-            </Text>
-
-            {loadingUsers ? (
-              <ActivityIndicator size="small" color={colors.mutedText} style={{ paddingVertical: 20 }} />
-            ) : devUsers && devUsers.length > 0 ? (
-              <FlatList
-                data={devUsers}
-                keyExtractor={(item) => item._id}
-                renderItem={({ item }) => (
-                  <Pressable
-                    onPress={() => pickUser(item)}
-                    style={({ pressed }) => ([
-                      styles.devUserRow,
-                      { backgroundColor: pressed ? colors.inputBg : "transparent" },
-                    ])}
-                  >
-                    <Text style={styles.devUserName}>{item.displayName}</Text>
-                    <Text style={styles.devUserHandle}>@{item.username}</Text>
-                  </Pressable>
-                )}
-              />
-            ) : (
-              <Text style={styles.emptyText}>No users found. Run the seed script.</Text>
-            )}
-
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setDevPickerVisible(false)}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -290,61 +207,6 @@ function makeStyles(colors: Colors) {
       color: "#fff",
       fontSize: 16,
       fontWeight: "600",
-    },
-    devBtn: {
-      marginTop: 24,
-      alignSelf: "center",
-    },
-    devText: {
-      fontSize: 14,
-      color: colors.mutedText,
-    },
-    overlay: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.4)",
-      justifyContent: "center",
-      padding: 24,
-    },
-    modalCard: {
-      backgroundColor: colors.card,
-      borderRadius: 20,
-      padding: 20,
-    },
-    modalTitle: {
-      fontSize: 18,
-      fontWeight: "600",
-      marginBottom: 4,
-      color: colors.text,
-    },
-    modalSubtitle: {
-      fontSize: 13,
-      color: colors.mutedText,
-      marginBottom: 16,
-    },
-    devUserRow: {
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    devUserName: {
-      fontSize: 16,
-      color: colors.text,
-    },
-    devUserHandle: {
-      fontSize: 12,
-      color: colors.mutedText,
-    },
-    emptyText: {
-      color: colors.mutedText,
-      paddingVertical: 12,
-    },
-    cancelBtn: {
-      marginTop: 16,
-      alignItems: "center",
-      paddingVertical: 10,
-    },
-    cancelText: {
-      color: colors.text,
     },
   });
 }

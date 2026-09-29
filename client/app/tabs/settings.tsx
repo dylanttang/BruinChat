@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, ThemeMode, Colors } from "../../context/ThemeContext";
-import { clearDevUserId, apiFetch } from "../../lib/api";
+import { clearAuthToken, apiFetch } from "../../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
 
@@ -87,7 +87,7 @@ export default function Settings() {
         text: "Sign out",
         style: "destructive",
         onPress: async () => {
-          await clearDevUserId();
+          await clearAuthToken();
           router.replace("/auth/welcome/welcome");
         },
       },

@@ -48,6 +48,7 @@ router.patch('/reports/:id', adminAuth, async (req, res) => {
 
     if (resolution === 'banned' && report.targetType === 'user') {
       await User.findByIdAndUpdate(report.targetId, { bannedAt: new Date() });
+      req.io?.in(`user:${report.targetId}`).disconnectSockets(true);
     }
 
     return res.json(report);
@@ -68,6 +69,7 @@ router.post('/users/:id/ban', adminAuth, async (req, res) => {
 
     user.bannedAt = new Date();
     await user.save();
+    req.io?.in(`user:${user._id}`).disconnectSockets(true);
 
     return res.json({ userId: user._id, bannedAt: user.bannedAt });
   } catch (err) {

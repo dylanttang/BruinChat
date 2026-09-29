@@ -2,23 +2,22 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema(
   {
-    username: { type: String, required: true, trim: true, lowercase: true },
-    email: { type: String, trim: true, lowercase: true },
-    googleId: { type: String, trim: true },
+    username: { type: String, maxlength: 64, required: true, trim: true, lowercase: true },
+    email: { type: String, maxlength: 254, trim: true, lowercase: true },
+    googleId: { type: String, maxlength: 255, trim: true },
     emailVerified: { type: Boolean, default: false },
-    displayName: { type: String, required: true, trim: true },
-    avatarUrl: { type: String, default: '' },
+    displayName: { type: String, maxlength: 100, required: true, trim: true },
+    avatarUrl: { type: String, maxlength: 2048, default: '' },
     courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
-    // NOTE: for now we seed fake users without auth; later replace this with hashedPassword, etc.
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     bannedAt: { type: Date, default: null },
-    pushToken: { type: String, default: null },
+    pushToken: { type: String, maxlength: 4096, default: null },
     notifEnabled: { type: Boolean, default: true },
     classNotif: { type: Boolean, default: true },
     replyNotif: { type: Boolean, default: true },
-    year: { type: String, default: null },
-    major: { type: String, default: null },
-    goal: { type: String, default: null },
+    year: { type: String, maxlength: 32, default: null },
+    major: { type: String, maxlength: 120, default: null },
+    goal: { type: String, maxlength: 1000, default: null },
     // Set when the user agrees to the Terms of Service / Privacy Policy.
     // termsVersion is compared against CURRENT_TERMS_VERSION on the server.
     termsAcceptedAt: { type: Date, default: null },

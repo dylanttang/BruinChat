@@ -1,3 +1,4 @@
+import { PROFILE_LIMITS, validString } from '../utils/inputLimits.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import User from '../../models/User.js';
@@ -200,7 +201,7 @@ router.put('/me/notifications', devAuth, async (req, res) => {
       return res.status(400).json({ error: 'No valid fields provided' });
     }
 
-    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true, runValidators: true })
       .select('notifEnabled classNotif replyNotif')
       .lean();
 
@@ -215,12 +216,18 @@ router.put('/me/notifications', devAuth, async (req, res) => {
 router.put('/me/profile', devAuth, async (req, res) => {
   try {
     const { year, major, goal } = req.body;
+    for (const field of ['year', 'major', 'goal']) {
+      const value = req.body[field];
+      if (value !== undefined && value !== null && !validString(value, PROFILE_LIMITS[field])) {
+        return res.status(400).json({ error: `${field} must be a string of at most ${PROFILE_LIMITS[field]} characters or null` });
+      }
+    }
     const update = {};
     if (year !== undefined) update.year = year;
     if (major !== undefined) update.major = major;
     if (goal !== undefined) update.goal = goal;
 
-    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true, runValidators: true })
       .populate('courses')
       .lean();
     res.json({ user });
@@ -235,14 +242,14 @@ router.put('/me/push-token', devAuth, async (req, res) => {
   try {
     const { pushToken } = req.body;
 
-    if (pushToken !== null && typeof pushToken !== 'string') {
-      return res.status(400).json({ error: 'pushToken must be a string or null' });
+    if (pushToken !== null && !validString(pushToken, PROFILE_LIMITS.pushToken)) {
+      return res.status(400).json({ error: 'pushToken must be a string of at most 4096 characters or null' });
     }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { pushToken: pushToken ?? null },
-      { new: true }
+      { new: true, runValidators: true }
     ).lean();
 
     return res.json({ pushToken: user.pushToken });
@@ -257,14 +264,14 @@ router.put('/me/avatar', devAuth, async (req, res) => {
   try {
     const { avatarUrl } = req.body;
 
-    if (typeof avatarUrl !== 'string' || !avatarUrl.startsWith('https://res.cloudinary.com/')) {
+    if (!validString(avatarUrl, PROFILE_LIMITS.avatarUrl) || !avatarUrl.startsWith('https://res.cloudinary.com/')) {
       return res.status(400).json({ error: 'avatarUrl must be a Cloudinary URL' });
     }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { avatarUrl },
-      { new: true }
+      { new: true, runValidators: true }
     ).lean();
 
     return res.json({ avatarUrl: user.avatarUrl });

@@ -38,6 +38,36 @@ function usernameFromEmail(email) {
   return email.split('@')[0].toLowerCase();
 }
 
+// Usernames are display handles, not identities, so a taken one just gets a
+// numeric suffix (jonathan, jonathan-2, jonathan-3, ...).
+async function availableUsername(base) {
+  if (!(await User.exists({ username: base }))) return base;
+  for (let n = 2; n < 50; n++) {
+    const candidate = `${base}-${n}`;
+    if (!(await User.exists({ username: candidate }))) return candidate;
+  }
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+// Find the account a verified Google identity belongs to. Accounts are
+// matched by Google account ID, then by verified email, and never by
+// username: the username is just the email prefix, and matching on it let
+// anyone whose UCLA email shared a prefix with an existing account (e.g. a
+// seeded account with no Google ID) sign in as that account.
+//
+// Resolves to { user } (null for a new account) or { status, error }.
+async function findAccountForGoogle({ googleId, email }) {
+  const byGoogleId = await User.findOne({ googleId });
+  if (byGoogleId) return { user: byGoogleId };
+
+  const byEmail = await User.findOne({ email });
+  if (byEmail?.googleId && byEmail.googleId !== googleId) {
+    // Same address, different Google account: never silently relink.
+    return { status: 409, error: 'This email is already linked to a different Google account' };
+  }
+  return { user: byEmail };
+}
+
 router.post('/google', authRateLimit, async (req, res) => {
   try {
     if (!process.env.JWT_SECRET) {
@@ -79,13 +109,9 @@ router.post('/google', authRateLimit, async (req, res) => {
     const displayName = payload.name || username;
     const avatarUrl = payload.picture || '';
 
-    let user = await User.findOne({
-      $or: [
-        { googleId },
-        { email },
-        { username },
-      ],
-    });
+    const match = await findAccountForGoogle({ googleId, email });
+    if (match.error) return res.status(match.status).json({ error: match.error });
+    let user = match.user;
 
     // A deleted account only keeps its email/Google ID if it was banned
     // (see DELETE /api/users/me), so a match here means a banned user trying
@@ -96,7 +122,7 @@ router.post('/google', authRateLimit, async (req, res) => {
 
     if (!user) {
       user = new User({
-        username,
+        username: await availableUsername(username),
         email,
         googleId,
         emailVerified: true,
@@ -111,7 +137,15 @@ router.post('/google', authRateLimit, async (req, res) => {
       if (avatarUrl) user.avatarUrl = avatarUrl;
     }
 
-    await user.save();
+    try {
+      await user.save();
+    } catch (err) {
+      // Another sign-up took the same username between the check and the
+      // save (unique index). Retry once with a random suffix.
+      if (err.code !== 11000 || !err.keyPattern?.username) throw err;
+      user.username = `${username}-${Math.random().toString(36).slice(2, 7)}`;
+      await user.save();
+    }
 
     const token = signAppToken(user);
     res.json({ token, user: user.toObject() });

@@ -48,7 +48,8 @@ Living reference for how the backend works: tech stack, auth, data models, API e
    - Verifies the ID token via `google-auth-library` against our web/iOS/Android client IDs
    - Confirms `email_verified` is true
    - Checks the email matches `/^[a-zA-Z0-9._%+-]+@(g\.)?ucla\.edu$/`
-   - Upserts a User document (matched by `googleId`, `email`, or `username`)
+   - Finds the account by `googleId`, then by `email`; **never by `username`** (it's only the email prefix, so matching on it would let a stranger take over an account with the same prefix). An email already linked to a different Google account is refused with 409
+   - Otherwise creates a User; if the username is taken it gets a numeric suffix (`jonathan-2`)
    - Returns `{ token, user }` where `token` is an HS256 JWT with `sub` = user ID, `role` = user role, 7-day expiry
 6. Client stores the JWT in AsyncStorage and sends it as `Authorization: Bearer <token>` on every subsequent request
 

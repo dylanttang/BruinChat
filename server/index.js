@@ -1,3 +1,4 @@
+import { createOriginPolicy, originGuard, socketCorsOptions } from './utils/cors.js';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
@@ -17,9 +18,12 @@ import authRoutes from './routes/auth.js';
 import { globalRateLimit } from './middleware/rateLimit.js';
 
 dotenv.config();
+const isOriginAllowed = createOriginPolicy();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const httpServer = createServer(app);
+const io = new Server(httpServer, socketCorsOptions(isOriginAllowed));
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Trust the first proxy in front of us (load balancer / cloud host) so
@@ -28,7 +32,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.set('trust proxy', 1);
 
 // Middleware
-app.use(cors());
+app.use(originGuard(isOriginAllowed));
+app.use(cors({ origin: (origin, callback) => callback(null, isOriginAllowed(origin)) }));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

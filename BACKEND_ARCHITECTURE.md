@@ -54,13 +54,15 @@ Living reference for how the backend works: tech stack, auth, data models, API e
 
 ### Middleware contract (`server/middleware/devAuth.js`)
 
-The same middleware handles **both** real auth and dev auth:
+Every authenticated request needs `Authorization: Bearer <JWT>`. The middleware verifies the token, loads the user (rejecting deleted accounts), and sets `req.user`. There is no header-based bypass; the old `x-user-id` fallback has been removed.
 
-- If `Authorization: Bearer <JWT>` is present → verify JWT, look up user, set `req.user`
-- Else if `x-user-id: <ObjectId>` is present → look up that user, set `req.user` (dev-only path)
-- Else → 401
+Tokens come from Google sign-in or, for local development, the dev user picker:
 
-This means the dev-user picker still works for local development without breaking real auth. The temporary fallback should be removed once OAuth has been live in production for a while (the `GET /api/users/dev-list` endpoint will also need to go).
+- `POST /api/auth/dev-login { userId }` returns a normal JWT for any user, and `GET /api/users/dev-list` lists users for the picker
+- Both return 404 unless the server runs with `DEV_AUTH=true` **and** `NODE_ENV` isn't `production` (`server/utils/devLogin.js`). The server logs a warning at startup when it's on
+- The "Skip (Dev)" button only renders in development builds (`__DEV__`)
+
+Remove the picker and both endpoints once Google sign-in works in every environment.
 
 ### Admin auth (`server/middleware/adminAuth.js`)
 
@@ -173,8 +175,8 @@ Socket.io is mounted on the same HTTP server. CORS is currently `*` (locked down
 
 The server `req.io` middleware attaches the Socket.io instance to every request, so route handlers can emit events after persisting changes.
 
-### Known gap
-Socket.io handshake auth currently trusts the client-provided `userId` without verification. A future PR should verify this against the JWT.
+### Socket auth
+Connections must send the app JWT as `auth: { token }` (`server/utils/socketAuth.js`). The handshake is refused for missing, invalid or expired tokens and for deleted or banned users, and `socket.userId` comes from the verified token. `joinChat` only joins the room if the user is a member of that chat (it acks `{ ok, error? }`), so nobody can listen to chats they aren't in, and `typing` is only relayed to rooms the socket joined.
 
 ---
 
@@ -226,12 +228,13 @@ Direct upload pattern (no images touch our server):
 
 ## API Endpoints
 
-All `/api/*` endpoints require auth via `devAuth` (Bearer JWT or `x-user-id` header) unless noted.
+All `/api/*` endpoints require auth via `devAuth` (Bearer JWT) unless noted.
 
 ### Auth
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `POST` | `/api/auth/google` | No | Exchange Google ID token for app JWT |
+| `POST` | `/api/auth/dev-login` | No | Dev picker: app JWT for any user (404 unless `DEV_AUTH=true` and not production) |
 
 ### Health
 | Method | Path | Auth | Description |
@@ -246,7 +249,7 @@ All `/api/*` endpoints require auth via `devAuth` (Bearer JWT or `x-user-id` hea
 ### Users
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/users/dev-list` | No | List all users (**dev-only**, remove with OAuth full launch) |
+| `GET` | `/api/users/dev-list` | No | List all users for the dev picker (404 unless `DEV_AUTH=true` and not production) |
 | `GET` | `/api/users/me` | Yes | Current user, with populated courses |
 | `PUT` | `/api/users/me/courses` | Yes | Replace enrolled courses + auto-join/leave chats |
 | `PUT` | `/api/users/me/profile` | Yes | Update year/major/goal |

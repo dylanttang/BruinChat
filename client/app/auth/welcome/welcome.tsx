@@ -15,7 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
-import { apiFetch, setDevUserId, signInWithGoogleIdToken } from "../../../lib/api";
+import { apiFetch, signInAsDevUser, signInWithGoogleIdToken } from "../../../lib/api";
 import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
 import GradientButton from "../../../components/GradientButton";
 
@@ -104,7 +104,14 @@ export default function Welcome() {
   };
 
   const pickUser = async (user: DevUser) => {
-    await setDevUserId(user._id);
+    try {
+      await signInAsDevUser(user._id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Dev login failed";
+      setDevPickerVisible(false);
+      setAuthError(message);
+      return;
+    }
     setDevPickerVisible(false);
     router.replace("/auth/terms");
   };
@@ -160,10 +167,14 @@ export default function Welcome() {
         style={styles.signInBtn}
       />
 
-      {/* TODO: Remove once every environment has Google OAuth client IDs. */}
-      <TouchableOpacity style={styles.devBtn} onPress={openDevPicker}>
-        <Text style={styles.devText}>Skip (Dev)</Text>
-      </TouchableOpacity>
+      {/* Dev-only user picker. Hidden in release builds; the server also
+          refuses it unless DEV_AUTH=true. Remove once Google sign-in works
+          everywhere. */}
+      {__DEV__ && (
+        <TouchableOpacity style={styles.devBtn} onPress={openDevPicker}>
+          <Text style={styles.devText}>Skip (Dev)</Text>
+        </TouchableOpacity>
+      )}
 
       <Modal
         transparent

@@ -19,14 +19,9 @@ export async function clearAuthToken(): Promise<void> {
   await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
-export async function getDevUserId(): Promise<string | null> {
-  return AsyncStorage.getItem(DEV_USER_KEY);
-}
-
-export async function setDevUserId(id: string): Promise<void> {
-  await AsyncStorage.setItem(DEV_USER_KEY, id);
-}
-
+// The old dev picker stored a raw user ID under this key and sent it as an
+// x-user-id header. The server no longer accepts that; this only clears any
+// leftover value on sign out.
 export async function clearDevUserId(): Promise<void> {
   await AsyncStorage.removeItem(DEV_USER_KEY);
 }
@@ -47,22 +42,36 @@ export async function signInWithGoogleIdToken(idToken: string) {
   return data;
 }
 
-// Thin wrapper around fetch that automatically adds app auth. The temporary
-// x-user-id fallback stays in place for local dev until the picker is removed.
+// Dev picker sign-in (server must run with DEV_AUTH=true). Returns a normal
+// app token, same as Google sign-in.
+export async function signInAsDevUser(userId: string) {
+  const res = await fetch(`${API_URL}/api/auth/dev-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Dev login failed");
+  }
+
+  await setAuthToken(data.token);
+  return data;
+}
+
+// Thin wrapper around fetch that adds the app's auth token.
 export async function apiFetch(
   path: string,
   init: RequestInit = {}
 ): Promise<Response> {
   const token = await getAuthToken();
-  const userId = await getDevUserId();
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
-  } else if (userId) {
-    headers.set("x-user-id", userId);
   }
 
   return fetch(`${API_URL}${path}`, { ...init, headers });

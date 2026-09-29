@@ -2,7 +2,9 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import User from '../../models/User.js';
+import mongoose from 'mongoose';
 import { authRateLimit } from '../middleware/rateLimit.js';
+import { isDevLoginEnabled } from '../utils/devLogin.js';
 
 const router = Router();
 const googleClient = new OAuth2Client();
@@ -116,6 +118,39 @@ router.post('/google', authRateLimit, async (req, res) => {
   } catch (err) {
     console.error('POST /api/auth/google error:', err);
     res.status(401).json({ error: 'Google sign-in failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/dev-login — Sign in as any user without Google (dev only)
+//
+// Backs the "Skip (Dev)" picker. Returns a normal app JWT, so the rest of the
+// app (HTTP and sockets) only ever deals with real tokens. 404 unless
+// DEV_AUTH=true and NODE_ENV isn't "production" (see utils/devLogin.js).
+//
+// Body: { userId }
+// Response: { token, user }
+// ---------------------------------------------------------------------------
+router.post('/dev-login', async (req, res) => {
+  if (!isDevLoginEnabled()) return res.status(404).json({ error: 'Not found' });
+
+  try {
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: 'Set JWT_SECRET in server/.env to use dev login' });
+    }
+
+    const { userId } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user || user.deletedAt) return res.status(404).json({ error: 'User not found' });
+
+    res.json({ token: signAppToken(user), user: user.toObject() });
+  } catch (err) {
+    console.error('POST /api/auth/dev-login error:', err);
+    res.status(500).json({ error: 'Dev login failed' });
   }
 });
 

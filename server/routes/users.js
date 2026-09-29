@@ -11,15 +11,18 @@ import { deleteMessageMediaFiles } from '../utils/media.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { authRateLimit, enrollmentRateLimit } from '../middleware/rateLimit.js';
 import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
+import { isDevLoginEnabled } from '../utils/devLogin.js';
 
 const router = Router();
 
 // ---------------------------------------------------------------------------
-// GET /api/users/dev-list — List all users (for dev user picker before OAuth)
+// GET /api/users/dev-list — List all users for the dev user picker
 //
-// TEMPORARY: Remove this once Google OAuth is implemented.
+// Dev only: 404 unless DEV_AUTH=true and NODE_ENV isn't "production".
 // ---------------------------------------------------------------------------
 router.get('/dev-list', authRateLimit, async (req, res) => {
+  if (!isDevLoginEnabled()) return res.status(404).json({ error: 'Not found' });
+
   try {
     const users = await User.find({ deletedAt: null }, '_id displayName username')
       .sort({ displayName: 1 })

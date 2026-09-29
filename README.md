@@ -67,7 +67,7 @@ npm run client
 
 - Install **Expo Go** from the App Store or Play Store
 - Scan the QR code from Terminal 2
-- On the welcome screen, either sign in with your UCLA Google account or tap **Skip (Dev)** to pick a test user
+- On the welcome screen, either sign in with your UCLA Google account or tap **Skip (Dev)** to pick a test user. The picker needs `DEV_AUTH=true` and a `JWT_SECRET` in `server/.env` (see `server/.env.example`); it's only for local development
 
 If you're testing on a physical device on the same WiFi, set `EXPO_PUBLIC_API_URL` to your computer's local IP (e.g. `http://192.168.1.100:3000`) instead of `localhost`.
 

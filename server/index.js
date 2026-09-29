@@ -16,6 +16,8 @@ import uploadRoutes from './routes/upload.js';
 import feedbackRoutes from './routes/feedback.js';
 import authRoutes from './routes/auth.js';
 import { globalRateLimit } from './middleware/rateLimit.js';
+import { socketAuth, registerChatHandlers } from './utils/socketAuth.js';
+import { isDevLoginEnabled } from './utils/devLogin.js';
 
 dotenv.config();
 const isOriginAllowed = createOriginPolicy();
@@ -48,39 +50,11 @@ app.use((req, res, next) => {
 // the user-keyed limiting.
 app.use('/api', globalRateLimit);
 
-// Socket.io connection handling
+// Socket.io: every connection must present a valid app JWT, and joining a
+// chat's room requires membership (see utils/socketAuth.js).
+io.use(socketAuth);
 io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
-  
-  // Basic handshake authentication
-  const userId = socket.handshake.auth.userId;
-  if (userId) {
-    socket.userId = userId;
-  }
-
-  socket.on('joinChat', (chatId) => {
-    socket.join(chatId);
-    console.log(`Socket ${socket.id} joined chat ${chatId}`);
-  });
-
-  socket.on('leaveChat', (chatId) => {
-    socket.leave(chatId);
-    console.log(`Socket ${socket.id} left chat ${chatId}`);
-  });
-
-  socket.on('typing', ({ chatId, isTyping } = {}) => {
-    if (!chatId || !socket.userId || !socket.rooms.has(chatId)) return;
-
-    socket.to(chatId).emit('typing', {
-      chatId,
-      userId: socket.userId,
-      isTyping: !!isTyping,
-    });
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`Socket disconnected: ${socket.id}`);
-  });
+  registerChatHandlers(socket);
 });
 
 // Test route
@@ -130,5 +104,8 @@ httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`For mobile devices, use: ${process.env.SERVER_PUBLIC_URL}`);
   } else {
     console.log(`For mobile devices, set SERVER_PUBLIC_URL in .env to your computer's IP (e.g. http://192.168.1.100:${PORT})`);
+  }
+  if (isDevLoginEnabled()) {
+    console.warn('DEV_AUTH is on: anyone who can reach this server can sign in as any user. Local development only.');
   }
 });

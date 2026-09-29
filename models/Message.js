@@ -4,9 +4,9 @@ const messageSchema = new mongoose.Schema(
   {
     chatId: { type: mongoose.Schema.Types.ObjectId, ref: 'Chat', required: true, index: true },
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    text: { type: String, trim: true, default: '' },
-    mediaUrl: { type: String, default: '' },
-    mediaUrls: [{ type: String }],
+    text: { type: String, maxlength: 4000, trim: true, default: '' },
+    mediaUrl: { type: String, maxlength: 2048, default: '' },
+    mediaUrls: [{ type: String, maxlength: 2048 }],
     mediaTypes: [{ type: String, enum: ['image', 'video'] }],
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     reactions: [

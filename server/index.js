@@ -18,8 +18,17 @@ import authRoutes from './routes/auth.js';
 import { globalRateLimit } from './middleware/rateLimit.js';
 import { socketAuth, registerChatHandlers } from './utils/socketAuth.js';
 import { isDevLoginEnabled } from './utils/devLogin.js';
+import { checkJwtSecret } from './utils/jwtSecret.js';
 
 dotenv.config();
+
+try {
+  const jwtWarning = checkJwtSecret();
+  if (jwtWarning) console.warn(`Warning: ${jwtWarning}`);
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 const isOriginAllowed = createOriginPolicy();
 
 const app = express();

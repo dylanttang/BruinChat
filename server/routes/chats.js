@@ -11,7 +11,7 @@ import User from '../../models/User.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { sendPush } from '../utils/push.js';
 import { deleteMessageMediaFiles, uploadDir } from '../utils/media.js';
-import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
+import { mediaUploadRateLimit, messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
 import { postingBlock } from '../utils/moderation.js';
 
 const router = Router();
@@ -470,7 +470,7 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
 // ---------------------------------------------------------------------------
 // POST /api/chats/:id/messages/media — Upload media and create one message
 // ---------------------------------------------------------------------------
-router.post('/:id/messages/media', devAuth, messageSendRateLimit, (req, res) => {
+router.post('/:id/messages/media', devAuth, messageSendRateLimit, mediaUploadRateLimit, (req, res) => {
   upload.array('media', 10)(req, res, async (uploadErr) => {
     if (uploadErr) {
       deleteUploadedFiles(req.files);
@@ -521,7 +521,7 @@ router.post('/:id/messages/media', devAuth, messageSendRateLimit, (req, res) => 
     } catch (err) {
       deleteUploadedFiles(req.files);
       console.error('POST /api/chats/:id/messages/media error:', err);
-      res.status(500).json({ error: err.message || 'Failed to upload media' });
+      res.status(500).json({ error: 'Failed to upload media' });
     }
   });
 });

@@ -14,6 +14,7 @@
  *   actually 429-ing anyone. Use this when rolling out to prod for the
  *   first time so you can tune limits with real data.
  */
+import jwt from 'jsonwebtoken';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 
 const SHADOW_MODE = process.env.RATE_LIMIT_SHADOW === 'true';
@@ -27,20 +28,28 @@ const SHADOW_MODE = process.env.RATE_LIMIT_SHADOW === 'true';
 // `blockDuration` = how long to keep blocking after the window is exhausted
 //                   (defaults to `duration` if not set).
 
-// Global catch-all — applied once on /api/*
-// Generous: 300 requests per minute per identity. Mostly there to catch
-// runaway clients and absolute abuse.
-const globalLimiter = new RateLimiterMemory({
-  keyPrefix: 'global',
+// Global catch-all — applied once on /api/*, before route auth runs.
+// Signed-in requests are counted per user (300/min). Anonymous requests are
+// counted per IP with a much higher ceiling (1000/min), because campus WiFi
+// puts thousands of students behind a handful of public IPs; a per-IP limit
+// sized for one person would lock out a whole dorm.
+const globalUserLimiter = new RateLimiterMemory({
+  keyPrefix: 'global-user',
   points: 300,
   duration: 60,
 });
+const globalIpLimiter = new RateLimiterMemory({
+  keyPrefix: 'global-ip',
+  points: 1000,
+  duration: 60,
+});
 
-// Auth endpoints — strict, per-IP. Prevents brute force on /api/auth/google
-// and dev-list enumeration.
+// Auth endpoints — per-IP. Sized for a shared campus IP on launch day
+// (100 sign-ins per 15 minutes) while still stopping scripted abuse. Google
+// verifies the credentials themselves, so there's no password to brute-force.
 const authLimiter = new RateLimiterMemory({
   keyPrefix: 'auth',
-  points: 10,
+  points: 100,
   duration: 900, // 15 minutes
 });
 
@@ -79,6 +88,14 @@ const feedbackLimiter = new RateLimiterMemory({
   duration: 3600,
 });
 
+// Chat photo/video uploads — 30 requests per hour per user (each can carry
+// up to 10 files of 10 MB). On top of the message send limits.
+const mediaUploadLimiter = new RateLimiterMemory({
+  keyPrefix: 'media',
+  points: 30,
+  duration: 3600,
+});
+
 // File uploads — 10 per hour per user. Cloudinary costs real money.
 const uploadLimiter = new RateLimiterMemory({
   keyPrefix: 'upload',
@@ -105,6 +122,23 @@ function userOrIpKey(req) {
 }
 
 function ipKey(req) {
+  return `ip:${req.ip}`;
+}
+
+// The global limiter runs before route auth, so req.user isn't set yet. Read
+// the user from the bearer token instead. Only a token that verifies counts;
+// a forged or expired one falls back to the IP bucket, so rotating fake
+// tokens can't buy fresh quotas.
+export function globalKey(req) {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ') && process.env.JWT_SECRET) {
+    try {
+      const { sub } = jwt.verify(header.slice('Bearer '.length), process.env.JWT_SECRET);
+      if (sub) return `u:${sub}`;
+    } catch {
+      // fall through to IP
+    }
+  }
   return `ip:${req.ip}`;
 }
 
@@ -157,7 +191,13 @@ function chain(...middlewares) {
 // Exported middlewares
 // ---------------------------------------------------------------------------
 
-export const globalRateLimit = wrap(globalLimiter, userOrIpKey);
+const globalUserRateLimit = wrap(globalUserLimiter, globalKey);
+const globalIpRateLimit = wrap(globalIpLimiter, globalKey);
+export function globalRateLimit(req, res, next) {
+  return globalKey(req).startsWith('u:')
+    ? globalUserRateLimit(req, res, next)
+    : globalIpRateLimit(req, res, next);
+}
 export const authRateLimit = wrap(authLimiter, ipKey);
 export const messageSendRateLimit = chain(
   wrap(messageBurstLimiter, userOrIpKey),
@@ -167,4 +207,5 @@ export const reactionRateLimit = wrap(reactionLimiter, userOrIpKey);
 export const reportRateLimit = wrap(reportLimiter, userOrIpKey);
 export const feedbackRateLimit = wrap(feedbackLimiter, userOrIpKey);
 export const uploadRateLimit = wrap(uploadLimiter, userOrIpKey);
+export const mediaUploadRateLimit = wrap(mediaUploadLimiter, userOrIpKey);
 export const enrollmentRateLimit = wrap(enrollmentLimiter, userOrIpKey);

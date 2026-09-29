@@ -1,3 +1,4 @@
+import { validateMessageLengths, validString } from '../utils/inputLimits.js';
 import { Router } from 'express';
 import fs from 'fs';
 import mongoose from 'mongoose';
@@ -393,6 +394,8 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
 
     // Validate body
     const { text, mediaUrl, mediaUrls, mediaTypes, replyTo } = req.body;
+    const bodyError = validateMessageLengths(req.body);
+    if (bodyError) return res.status(400).json({ error: bodyError });
     const cleanedMediaUrls = Array.isArray(mediaUrls)
       ? mediaUrls.filter((url) => typeof url === 'string' && url.trim()).map((url) => url.trim())
       : [];
@@ -657,8 +660,8 @@ router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
     }
 
     const { text } = req.body;
-    if (text === undefined || !text.trim()) {
-      return res.status(400).json({ error: 'Message text cannot be empty' });
+    if (!validString(text, 4000) || !text.trim()) {
+      return res.status(400).json({ error: 'Message text must contain 1 to 4000 characters' });
     }
 
     message.text = text.trim();

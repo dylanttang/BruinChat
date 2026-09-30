@@ -167,27 +167,21 @@ export default function Settings() {
           </View>
         </View>
 
-        {/* Report */}
-        <Text style={styles.section}>Report</Text>
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <Text style={styles.rowText}>Report a user</Text>
-            <Text style={styles.chevron}>›</Text>
-          </View>
-          <View style={[styles.row, styles.lastRow]}>
-            <Text style={styles.rowText}>Past reports</Text>
-            <Text style={styles.chevron}>›</Text>
-          </View>
-        </View>
-
         {/* Privacy & safety */}
         <Text style={styles.section}>Privacy & safety</Text>
         <View style={styles.card}>
-          <TouchableOpacity style={[styles.row, styles.lastRow]} onPress={() => router.push("/blocked")}>
+          <TouchableOpacity style={styles.row} onPress={() => router.push("/blocked")}>
             <Text style={styles.rowText}>Blocked users</Text>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={[styles.row, styles.lastRow]} onPress={() => router.push("/reports")}>
+            <Text style={styles.rowText}>Your reports</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
         </View>
+        <Text style={styles.sectionHint}>
+          To report or block someone, tap their name in a chat or long-press one of their messages.
+        </Text>
 
         {/* Archive */}
         <Text style={styles.section}>Archive</Text>
@@ -427,6 +421,14 @@ function makeStyles(colors: Colors) {
       fontFamily: fonts.medium,
       fontSize: 14,
       color: colors.danger,
+    },
+    sectionHint: {
+      fontFamily: fonts.regular,
+      fontSize: 13,
+      lineHeight: 18,
+      color: colors.mutedText,
+      marginTop: 8,
+      marginHorizontal: 4,
     },
     rowSubtext: {
       fontFamily: fonts.regular,

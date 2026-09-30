@@ -4,10 +4,10 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, fonts, ThemeMode, Colors } from "../../context/ThemeContext";
-import { clearDevUserId, apiFetch } from "../../lib/api";
+import { clearAuthToken, clearDevUserId, apiFetch } from "../../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
-const SUPPORT_EMAIL = "bruinchatdevx@gmail.com";
+const SUPPORT_EMAIL = "bchatdevx@gmail.com";
 
 const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
   { label: "System default", value: "system" },
@@ -27,6 +27,9 @@ export default function Settings() {
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [deleteVisible, setDeleteVisible] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   // Load persisted notif prefs
   useEffect(() => {
@@ -89,11 +92,36 @@ export default function Settings() {
         text: "Sign out",
         style: "destructive",
         onPress: async () => {
+          await clearAuthToken();
           await clearDevUserId();
           router.replace("/auth/welcome/welcome");
         },
       },
     ]);
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteVisible(false);
+    setDeleteConfirmText("");
+  };
+
+  // Permanent, so the user has to type DELETE before the button enables.
+  const deleteAccount = async () => {
+    setDeleting(true);
+    try {
+      const res = await apiFetch("/api/users/me", { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await AsyncStorage.removeItem(NOTIF_KEY);
+      await clearAuthToken();
+      await clearDevUserId();
+      closeDeleteModal();
+      router.replace("/auth/welcome/welcome");
+    } catch (err) {
+      console.error("Failed to delete account:", err);
+      Alert.alert("Couldn't delete account", "Please try again, or email us for help.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -152,6 +180,15 @@ export default function Settings() {
           </View>
         </View>
 
+        {/* Privacy & safety */}
+        <Text style={styles.section}>Privacy & safety</Text>
+        <View style={styles.card}>
+          <TouchableOpacity style={[styles.row, styles.lastRow]} onPress={() => router.push("/blocked")}>
+            <Text style={styles.rowText}>Blocked users</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Archive */}
         <Text style={styles.section}>Archive</Text>
         <View style={styles.card}>
@@ -199,7 +236,53 @@ export default function Settings() {
         <TouchableOpacity style={styles.signOut} onPress={signOut}>
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.deleteAccount} onPress={() => setDeleteVisible(true)}>
+          <Text style={styles.deleteAccountText}>Delete account</Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      {/* Delete Account Modal */}
+      <Modal visible={deleteVisible} transparent animationType="fade" onRequestClose={closeDeleteModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Delete your account?</Text>
+            <Text style={styles.deleteBody}>This permanently deletes:</Text>
+            <Text style={styles.deleteBullet}>• your profile, email, and courses</Text>
+            <Text style={styles.deleteBullet}>• every message, photo, and video you've sent</Text>
+            <Text style={styles.deleteBullet}>• your reactions and feedback</Text>
+            <Text style={[styles.deleteBody, { marginTop: 10 }]}>
+              This can't be undone. Type <Text style={styles.deleteKeyword}>DELETE</Text> to confirm.
+            </Text>
+            <TextInput
+              style={styles.deleteInput}
+              placeholder="DELETE"
+              placeholderTextColor={colors.mutedText}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!deleting}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalCancel} onPress={closeDeleteModal} disabled={deleting}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalSubmit,
+                  { backgroundColor: colors.danger },
+                  (deleteConfirmText.trim() !== "DELETE" || deleting) && { opacity: 0.4 },
+                ]}
+                onPress={deleteAccount}
+                disabled={deleteConfirmText.trim() !== "DELETE" || deleting}
+              >
+                <Text style={styles.modalSubmitText}>{deleting ? "Deleting…" : "Delete forever"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Feedback Modal */}
       <Modal visible={feedbackVisible} transparent animationType="fade" onRequestClose={() => setFeedbackVisible(false)}>
@@ -302,6 +385,48 @@ function makeStyles(colors: Colors) {
     signOutText: {
       color: colors.danger,
       fontFamily: fonts.medium,
+    },
+    deleteBody: {
+      fontFamily: fonts.regular,
+      fontSize: 15,
+      lineHeight: 21,
+      color: colors.text,
+      marginBottom: 4,
+    },
+    deleteBullet: {
+      fontFamily: fonts.regular,
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.subtext,
+      marginLeft: 4,
+    },
+    deleteKeyword: {
+      fontFamily: fonts.bold,
+      color: colors.danger,
+    },
+    deleteInput: {
+      fontFamily: fonts.medium,
+      fontSize: 16,
+      letterSpacing: 2,
+      color: colors.text,
+      backgroundColor: colors.inputBg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      marginTop: 12,
+    },
+    deleteAccount: {
+      marginTop: 14,
+      marginBottom: 40,
+      alignItems: "center",
+      padding: 10,
+    },
+    deleteAccountText: {
+      fontFamily: fonts.medium,
+      fontSize: 14,
+      color: colors.danger,
     },
     rowSubtext: {
       fontFamily: fonts.regular,

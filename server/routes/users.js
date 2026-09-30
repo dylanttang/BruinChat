@@ -5,6 +5,9 @@ import User from '../../models/User.js';
 import Chat from '../../models/Chat.js';
 import Course from '../../models/Course.js';
 import Message from '../../models/Message.js';
+import Feedback from '../../models/Feedback.js';
+import { v2 as cloudinary } from 'cloudinary';
+import { deleteMessageMediaFiles } from '../utils/media.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { authRateLimit, enrollmentRateLimit } from '../middleware/rateLimit.js';
 import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
@@ -18,7 +21,7 @@ const router = Router();
 // ---------------------------------------------------------------------------
 router.get('/dev-list', authRateLimit, async (req, res) => {
   try {
-    const users = await User.find({}, '_id displayName username')
+    const users = await User.find({ deletedAt: null }, '_id displayName username')
       .sort({ displayName: 1 })
       .lean();
     res.json({ users });
@@ -33,7 +36,10 @@ router.get('/dev-list', authRateLimit, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/me', devAuth, async (req, res) => {
   try {
+    // moderationHistory holds internal moderator notes; admins see it through
+    // /api/admin, users only get their notices.
     const user = await User.findById(req.user._id)
+      .select('-moderationHistory')
       .populate('courses')
       .lean();
 
@@ -278,6 +284,192 @@ router.put('/me/avatar', devAuth, async (req, res) => {
   } catch (err) {
     console.error('PUT /api/users/me/avatar error:', err);
     return res.status(500).json({ error: 'Failed to update avatar' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/me/notices/seen — Mark all moderation notices as seen
+//
+// The app shows unseen notices (warnings, mutes, removed messages) once when
+// it opens, then calls this.
+// ---------------------------------------------------------------------------
+router.post('/me/notices/seen', devAuth, async (req, res) => {
+  try {
+    await User.updateOne(
+      { _id: req.user._id },
+      { $set: { 'moderationNotices.$[unseen].seenAt': new Date() } },
+      { arrayFilters: [{ 'unseen.seenAt': null }] }
+    );
+    res.status(204).end();
+  } catch (err) {
+    console.error('POST /api/users/me/notices/seen error:', err);
+    res.status(500).json({ error: 'Failed to update notices' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/users/me/blocked — Users the current user has blocked
+//
+// Response: { users: [{ _id, displayName, avatarUrl }] }
+// ---------------------------------------------------------------------------
+router.get('/me/blocked', devAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate('blockedUsers', '_id displayName avatarUrl')
+      .lean();
+    res.json({ users: user?.blockedUsers ?? [] });
+  } catch (err) {
+    console.error('GET /api/users/me/blocked error:', err);
+    res.status(500).json({ error: 'Failed to fetch blocked users' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/:id/block — Block a user
+// DELETE /api/users/:id/block — Unblock a user
+//
+// Blocking hides the target's messages from the current user (history, chat
+// previews, live messages on the client) and stops push notifications from
+// them. It's one-way: the blocked user isn't told and can still see the
+// blocker's messages in shared class chats.
+//
+// Response: { blockedUsers: string[] }
+// ---------------------------------------------------------------------------
+router.post('/:id/block', devAuth, async (req, res) => {
+  try {
+    const targetId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    if (targetId === req.user._id.toString()) {
+      return res.status(400).json({ error: "You can't block yourself" });
+    }
+
+    const target = await User.findById(targetId).select('_id').lean();
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $addToSet: { blockedUsers: target._id } },
+      { new: true }
+    ).lean();
+
+    res.json({ blockedUsers: user.blockedUsers });
+  } catch (err) {
+    console.error('POST /api/users/:id/block error:', err);
+    res.status(500).json({ error: 'Failed to block user' });
+  }
+});
+
+router.delete('/:id/block', devAuth, async (req, res) => {
+  try {
+    const targetId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $pull: { blockedUsers: targetId } },
+      { new: true }
+    ).lean();
+
+    res.json({ blockedUsers: user.blockedUsers });
+  } catch (err) {
+    console.error('DELETE /api/users/:id/block error:', err);
+    res.status(500).json({ error: 'Failed to unblock user' });
+  }
+});
+
+// Best-effort removal of an avatar we host on Cloudinary. Google profile
+// photo URLs aren't ours, so those are skipped.
+async function deleteCloudinaryAvatar(avatarUrl) {
+  const match = /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/(?:v\d+\/)?(avatars\/[^.]+)/.exec(avatarUrl || '');
+  if (!match || !process.env.CLOUDINARY_API_SECRET) return;
+
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+  try {
+    await cloudinary.uploader.destroy(match[1]);
+  } catch (err) {
+    console.error('Failed to delete Cloudinary avatar:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/users/me — Permanently delete the current user's account
+//
+// Matches the Privacy Policy (docs/legal/privacy-policy.md, section 6):
+//   - Messages they sent are cleared the same way as a single-message delete
+//     (text and media removed, a "deleted" placeholder stays in the chat)
+//   - Their reactions are removed from other people's messages
+//   - They're removed from every chat, and their feedback is deleted
+//   - The user document becomes a tombstone named "Deleted user" with no
+//     personal data, so old messages still resolve a sender
+//   - Banned users keep their email and Google ID on the tombstone so they
+//     can't sign up again (Privacy Policy section 5)
+//   - Reports they filed or that are about them are kept (section 5)
+//
+// Every step is idempotent, so a failed request can simply be retried.
+//
+// Response: 204
+// ---------------------------------------------------------------------------
+router.delete('/me', devAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const now = new Date();
+
+    const sentMedia = await Message.find({ senderId: userId })
+      .select('mediaUrl mediaUrls')
+      .lean();
+    sentMedia.forEach(deleteMessageMediaFiles);
+
+    await Message.updateMany(
+      { senderId: userId, deletedAt: null },
+      { $set: { text: '', mediaUrl: '', mediaUrls: [], mediaTypes: [], deletedAt: now } }
+    );
+    await Message.updateMany(
+      { 'reactions.userId': userId },
+      { $pull: { reactions: { userId } } }
+    );
+    await Chat.updateMany(
+      { $or: [{ members: userId }, { archivedBy: userId }] },
+      { $pull: { members: userId, archivedBy: userId } }
+    );
+    await Feedback.deleteMany({ userId });
+    await deleteCloudinaryAvatar(req.user.avatarUrl);
+
+    const tombstone = {
+      $set: {
+        username: `deleted-${userId}`,
+        displayName: 'Deleted user',
+        avatarUrl: '',
+        emailVerified: false,
+        courses: [],
+        pushToken: null,
+        year: null,
+        major: null,
+        goal: null,
+        blockedUsers: [],
+        termsAcceptedAt: null,
+        termsVersion: null,
+        deletedAt: now,
+      },
+    };
+    if (!req.user.bannedAt) {
+      // $unset rather than null: the email/googleId indexes are sparse, so a
+      // missing field frees the value for a future sign-up.
+      tombstone.$unset = { email: '', googleId: '' };
+    }
+    await User.updateOne({ _id: userId }, tombstone);
+
+    res.status(204).end();
+  } catch (err) {
+    console.error('DELETE /api/users/me error:', err);
+    res.status(500).json({ error: 'Failed to delete account' });
   }
 });
 

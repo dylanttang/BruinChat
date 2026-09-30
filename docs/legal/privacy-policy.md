@@ -89,7 +89,7 @@ If BChat's ownership changes (for example, the project is handed off to a new st
 - **Edit your profile:** you can change your display name, profile picture, and courses in the app.
 - **Delete messages:** you can delete your own messages at any time.
 - **Notifications:** you can turn notifications off in the app's Settings or in your device settings.
-- **Other requests:** to ask what information we have about you or to request a correction or deletion, email **bruinchatdevx@gmail.com**. We may need to verify your identity before acting on a request.
+- **Other requests:** to ask what information we have about you or to request a correction or deletion, email **bchatdevx@gmail.com**. We may need to verify your identity before acting on a request.
 
 ## 7. Security
 
@@ -101,7 +101,7 @@ BChat is for UCLA students and is not intended for children under 13. We do not 
 
 ## 9. California residents
 
-If you are a California resident, you have the right to know what personal information we collect, to request deletion of it, to correct it, and to not be discriminated against for exercising these rights. We do not sell or share personal information for cross-context behavioral advertising. To make a request, email **bruinchatdevx@gmail.com**.
+If you are a California resident, you have the right to know what personal information we collect, to request deletion of it, to correct it, and to not be discriminated against for exercising these rights. We do not sell or share personal information for cross-context behavioral advertising. To make a request, email **bchatdevx@gmail.com**.
 
 ## 10. Changes to this policy
 
@@ -109,4 +109,4 @@ We may update this Privacy Policy from time to time. If we make significant chan
 
 ## 11. Contact us
 
-Questions about this Privacy Policy or your information? Email **bruinchatdevx@gmail.com**.
+Questions about this Privacy Policy or your information? Email **bchatdevx@gmail.com**.

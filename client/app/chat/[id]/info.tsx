@@ -1,8 +1,9 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import UserProfileSheet, { ProfileUser } from "../../../components/UserProfileSheet";
 import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
 
 type Member = {
@@ -33,14 +34,32 @@ export default function ChatInfo() {
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
 
   useEffect(() => {
-    apiFetch(`/api/chats/${id}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setChat(data?.chat ?? null))
+    Promise.all([
+      apiFetch(`/api/chats/${id}`).then((res) => (res.ok ? res.json() : null)),
+      apiFetch("/api/users/me").then((res) => (res.ok ? res.json() : null)),
+    ])
+      .then(([chatData, meData]) => {
+        setChat(chatData?.chat ?? null);
+        setCurrentUserId(meData?.user?._id ?? null);
+        setBlockedIds(new Set((meData?.user?.blockedUsers ?? []).map(String)));
+      })
       .catch((err) => console.error("Failed to load chat info:", err))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleBlockedChange = (userId: string, blocked: boolean) => {
+    setBlockedIds((prev) => {
+      const next = new Set(prev);
+      if (blocked) next.add(userId);
+      else next.delete(userId);
+      return next;
+    });
+  };
 
   if (loading) {
     return (
@@ -96,18 +115,24 @@ export default function ChatInfo() {
           <Text style={styles.sectionTitle}>
             Members ({chat.members.length})
           </Text>
-          {chat.members.map((member, index) => (
-            <View
-              key={member._id}
-              style={[
-                styles.memberRow,
-                index === chat.members.length - 1 && { borderBottomWidth: 0 },
-              ]}
-            >
-              <View style={styles.avatar} />
-              <Text style={styles.memberName}>{member.displayName}</Text>
-            </View>
-          ))}
+          {chat.members.map((member, index) => {
+            const isMe = member._id === currentUserId;
+            return (
+              <TouchableOpacity
+                key={member._id}
+                style={[
+                  styles.memberRow,
+                  index === chat.members.length - 1 && { borderBottomWidth: 0 },
+                ]}
+                onPress={() => setProfileUser(member)}
+                disabled={isMe}
+              >
+                <Image source={member.avatarUrl ? { uri: member.avatarUrl } : undefined} style={styles.avatar} />
+                <Text style={styles.memberName}>{member.displayName}{isMe ? " (you)" : ""}</Text>
+                {blockedIds.has(member._id) && <Text style={styles.blockedTag}>Blocked</Text>}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Leave Button */}
@@ -115,6 +140,13 @@ export default function ChatInfo() {
           <Text style={styles.leaveText}>Leave</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <UserProfileSheet
+        user={profileUser}
+        isBlocked={!!profileUser && blockedIds.has(profileUser._id)}
+        onClose={() => setProfileUser(null)}
+        onBlockedChange={handleBlockedChange}
+      />
     </SafeAreaView>
   );
 }
@@ -194,6 +226,11 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.avatarBg,
       borderRadius: 18,
       marginRight: 12,
+    },
+    blockedTag: {
+      fontFamily: fonts.medium,
+      fontSize: 12,
+      color: colors.danger,
     },
     memberName: {
       fontFamily: fonts.regular,

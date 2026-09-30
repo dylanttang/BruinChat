@@ -1,4 +1,5 @@
 import { getStoredToken, storeToken, removeStoredToken } from "./tokenStorage";
+import { signOutOfNativeGoogle } from "./googleNativeSignIn";
 
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
@@ -15,6 +16,7 @@ export async function setAuthToken(token: string) {
 }
 export async function clearAuthToken() {
   await removeStoredToken();
+  await signOutOfNativeGoogle();
   sessionListeners.forEach((listener) => listener());
 }
 

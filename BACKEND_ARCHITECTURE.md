@@ -203,8 +203,8 @@ Direct upload pattern (no images touch our server):
 
 | Limiter | Scope | Limit |
 |---------|-------|-------|
-| Global | All `/api/*` | 300 req / min per IP |
-| Auth | `/api/auth/*` | 10 / 15 min per IP |
+| Global | All `/api/*` | 300 / min per signed-in user (verified token); 1000 / min per IP for anonymous requests, since campus WiFi shares IPs |
+| Auth | `POST /api/auth/google` | 100 / 15 min per IP |
 | Message send | `POST /api/chats/:id/messages` | 10/10s burst + 60/min sustained per user |
 | Reactions | `POST /api/chats/:chatId/messages/:id/react` | 30 / min per user |
 | Reports | `POST /api/reports` | 5 / hour per user |

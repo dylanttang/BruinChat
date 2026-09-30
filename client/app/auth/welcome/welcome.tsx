@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { signInWithGoogleIdToken } from "../../../lib/api";
+import { resolveSignedInRoute } from "../../../lib/session";
 import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
 import GradientButton from "../../../components/GradientButton";
 
@@ -37,6 +38,9 @@ export default function Welcome() {
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     selectAccount: true,
+    // Only list UCLA accounts in Google's picker. This is a convenience; the
+    // server enforces the domain.
+    extraParams: { hd: "g.ucla.edu" },
   });
 
   useEffect(() => {
@@ -52,7 +56,7 @@ export default function Welcome() {
 
       try {
         await signInWithGoogleIdToken(idToken);
-        router.replace("/auth/terms");
+        router.replace(await resolveSignedInRoute());
       } catch (err) {
         const message = err instanceof Error ? err.message : "Google sign-in failed";
         setAuthError(message);
@@ -85,7 +89,8 @@ export default function Welcome() {
       <Text style={styles.tagline}>Instantly connected chats for every UCLA class</Text>
       <Text style={styles.title}>Sign in with your UCLA{"\n"}Google account</Text>
       <Text style={styles.hint}>
-        Use your @ucla.edu or @g.ucla.edu account. BChat is only for UCLA students.
+        Use your @g.ucla.edu account (the Google version of your @ucla.edu
+        email). BChat is only for UCLA students.
       </Text>
 
       {authError && <Text style={styles.errorText}>{authError}</Text>}

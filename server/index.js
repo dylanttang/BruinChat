@@ -3,8 +3,6 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import coursesRoutes from './routes/courses.js';
 import chatsRoutes from './routes/chats.js';
 import { createServer } from 'http';
@@ -17,14 +15,19 @@ import feedbackRoutes from './routes/feedback.js';
 import authRoutes from './routes/auth.js';
 import { globalRateLimit } from './middleware/rateLimit.js';
 
+import { mediaResponseMiddleware } from './utils/media.js';
+import { configureSockets } from './utils/sockets.js';
+
 dotenv.config();
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32 || process.env.JWT_SECRET === 'replace-with-a-long-random-secret') {
+  throw new Error('Set JWT_SECRET to a random secret of at least 32 characters');
+}
 const isOriginAllowed = createOriginPolicy();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const httpServer = createServer(app);
 const io = new Server(httpServer, socketCorsOptions(isOriginAllowed));
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Trust the first proxy in front of us (load balancer / cloud host) so
 // req.ip reflects the real client IP. Without this, all requests appear to
@@ -35,7 +38,7 @@ app.set('trust proxy', 1);
 app.use(originGuard(isOriginAllowed));
 app.use(cors({ origin: (origin, callback) => callback(null, isOriginAllowed(origin)) }));
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(mediaResponseMiddleware);
 
 // Attach io to req
 app.use((req, res, next) => {
@@ -48,40 +51,7 @@ app.use((req, res, next) => {
 // the user-keyed limiting.
 app.use('/api', globalRateLimit);
 
-// Socket.io connection handling
-io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
-  
-  // Basic handshake authentication
-  const userId = socket.handshake.auth.userId;
-  if (userId) {
-    socket.userId = userId;
-  }
-
-  socket.on('joinChat', (chatId) => {
-    socket.join(chatId);
-    console.log(`Socket ${socket.id} joined chat ${chatId}`);
-  });
-
-  socket.on('leaveChat', (chatId) => {
-    socket.leave(chatId);
-    console.log(`Socket ${socket.id} left chat ${chatId}`);
-  });
-
-  socket.on('typing', ({ chatId, isTyping } = {}) => {
-    if (!chatId || !socket.userId || !socket.rooms.has(chatId)) return;
-
-    socket.to(chatId).emit('typing', {
-      chatId,
-      userId: socket.userId,
-      isTyping: !!isTyping,
-    });
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`Socket disconnected: ${socket.id}`);
-  });
-});
+configureSockets(io);
 
 // Test route
 app.get('/', (req, res) => {

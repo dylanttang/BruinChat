@@ -54,7 +54,8 @@
           "cameraPermission": "BChat needs camera access so you can take photos and videos to share in class chats.",
           "microphonePermission": "BChat needs microphone access to record sound when you take videos to share in class chats."
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

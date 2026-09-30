@@ -115,7 +115,8 @@ export default function Profile() {
         body: JSON.stringify({ avatarUrl }),
       });
       if (!res.ok) throw new Error("Failed to save avatar");
-      setUser((prev) => (prev ? { ...prev, avatarUrl } : prev));
+      const saved = await res.json();
+      setUser((prev) => (prev ? { ...prev, avatarUrl: saved.avatarUrl } : prev));
     } catch (err: any) {
       Alert.alert("Upload failed", err.message ?? "Could not update avatar. Try again.");
     } finally {

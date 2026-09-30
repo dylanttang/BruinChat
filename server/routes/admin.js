@@ -6,7 +6,6 @@ import Message from '../../models/Message.js';
 import Chat from '../../models/Chat.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { sendPush } from '../utils/push.js';
-import { deleteMessageMediaFiles } from '../utils/media.js';
 
 const router = Router();
 
@@ -254,7 +253,6 @@ router.post('/reports/resolve', adminAuth, async (req, res) => {
 
     if (removeMessage && target && !target.deletedAt) {
       const message = await Message.findById(targetId);
-      deleteMessageMediaFiles(message);
       message.text = '';
       message.mediaUrl = '';
       message.mediaUrls = [];
@@ -337,6 +335,10 @@ router.post('/reports/resolve', adminAuth, async (req, res) => {
       }
     );
 
+    // A ban takes effect on open sockets immediately, not just on the next
+    // request.
+    if (action === 'ban') req.io?.in(`user:${targetUser._id}`).disconnectSockets(true);
+
     // Let the user know right away if they have a device registered. Bans
     // are shown by the banned screen instead.
     const pushUser = await User.findById(targetUser._id).select('pushToken').lean();
@@ -377,6 +379,8 @@ async function accountAction(req, res, { action, check, update }) {
       },
       { new: true }
     ).lean();
+
+    if (action === 'banned') req.io?.in(`user:${user._id}`).disconnectSockets(true);
 
     return res.json({ user: summarizeUser(updated) });
   } catch (err) {

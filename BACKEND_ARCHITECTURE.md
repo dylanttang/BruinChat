@@ -50,17 +50,11 @@ Living reference for how the backend works: tech stack, auth, data models, API e
    - Checks the email matches `/^[a-zA-Z0-9._%+-]+@(g\.)?ucla\.edu$/`
    - Upserts a User document (matched by `googleId`, `email`, or `username`)
    - Returns `{ token, user }` where `token` is an HS256 JWT with `sub` = user ID, `role` = user role, 7-day expiry
-6. Client stores the JWT in AsyncStorage and sends it as `Authorization: Bearer <token>` on every subsequent request
+6. Client stores the JWT in Expo SecureStore on native devices (memory only on web) and sends it as `Authorization: Bearer <token>` on every subsequent request
 
 ### Middleware contract (`server/middleware/devAuth.js`)
 
-The same middleware handles **both** real auth and dev auth:
-
-- If `Authorization: Bearer <JWT>` is present → verify JWT, look up user, set `req.user`
-- Else if `x-user-id: <ObjectId>` is present → look up that user, set `req.user` (dev-only path)
-- Else → 401
-
-This means the dev-user picker still works for local development without breaking real auth. The temporary fallback should be removed once OAuth has been live in production for a while (the `GET /api/users/dev-list` endpoint will also need to go).
+All environments require a signed, unexpired HS256 bearer JWT with a valid user subject. The middleware reloads the account and rejects deleted or banned users. It never accepts `x-user-id`; the dev picker and public dev-list endpoint have been removed.
 
 ### Admin auth (`server/middleware/adminAuth.js`)
 
@@ -173,8 +167,8 @@ Socket.io is mounted on the same HTTP server. CORS is currently `*` (locked down
 
 The server `req.io` middleware attaches the Socket.io instance to every request, so route handlers can emit events after persisting changes.
 
-### Known gap
-Socket.io handshake auth currently trusts the client-provided `userId` without verification. A future PR should verify this against the JWT.
+### Socket authorization
+Connections require `auth: { token }`. The server verifies the JWT and user account; `joinChat` and typing events check membership. Tokens disconnect on expiry. Leaving a chat or dropping a course evicts the user's sockets from its room, and banning a user disconnects their sockets.
 
 ---
 
@@ -192,14 +186,14 @@ Direct upload pattern (no images touch our server):
 
 1. Client calls `GET /api/upload/signature?folder=avatars` (or `messages`)
 2. Server (`routes/upload.js`) signs a Cloudinary upload request with our `CLOUDINARY_API_SECRET`
-3. Server returns `{ signature, timestamp, apiKey, cloudName, folder }`
+3. Server returns signed authenticated upload parameters scoped to the user, including a random public ID with overwrite disabled
 4. Client (`lib/cloudinary.ts`) POSTs the image directly to Cloudinary with that signature
-5. Cloudinary returns the hosted URL
-6. Client sends the URL to `PUT /api/users/me/avatar` (for avatars) or includes it in a message body
+5. Cloudinary returns an authenticated asset; the client stores its unsigned reference
+6. Client sends the reference to `PUT /api/users/me/avatar` or a message. Authorized API responses and socket events issue one-hour signed download links. Existing public/local assets require migration.
 
-**Client-side limit:** 5 MB per file.
+**Client-side limit:** 10 MB per file, up to 10 attachments. Configure matching limits and allowed image/video formats in the signed Cloudinary preset.
 
-**Server-side validation:** `avatarUrl` must start with `https://res.cloudinary.com/`.
+**Server-side validation:** media references must be authenticated assets in the configured cloud and the uploading user’s folder, at most 2048 characters. Local multipart upload and public `/uploads` serving are removed.
 
 ---
 
@@ -210,7 +204,7 @@ Direct upload pattern (no images touch our server):
 | Limiter | Scope | Limit |
 |---------|-------|-------|
 | Global | All `/api/*` | 300 req / min per IP |
-| Auth | `/api/auth/*`, `/api/users/dev-list` | 10 / 15 min per IP |
+| Auth | `/api/auth/*` | 10 / 15 min per IP |
 | Message send | `POST /api/chats/:id/messages` | 10/10s burst + 60/min sustained per user |
 | Reactions | `POST /api/chats/:chatId/messages/:id/react` | 30 / min per user |
 | Reports | `POST /api/reports` | 5 / hour per user |
@@ -226,7 +220,7 @@ Direct upload pattern (no images touch our server):
 
 ## API Endpoints
 
-All `/api/*` endpoints require auth via `devAuth` (Bearer JWT or `x-user-id` header) unless noted.
+All `/api/*` endpoints require auth via `devAuth` (Bearer JWT only) unless noted.
 
 ### Auth
 | Method | Path | Auth | Description |
@@ -246,7 +240,6 @@ All `/api/*` endpoints require auth via `devAuth` (Bearer JWT or `x-user-id` hea
 ### Users
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/users/dev-list` | No | List all users (**dev-only**, remove with OAuth full launch) |
 | `GET` | `/api/users/me` | Yes | Current user, with populated courses |
 | `PUT` | `/api/users/me/courses` | Yes | Replace enrolled courses + auto-join/leave chats |
 | `PUT` | `/api/users/me/profile` | Yes | Update year/major/goal |
@@ -336,7 +329,8 @@ See `server/.env.example` and `client/.env.example` for the canonical list. Brie
 **Server**
 - `PORT` (default 3000)
 - `MONGODB_URI` (required), `MONGODB_DB` (optional — overrides the DB name from the URI)
-- `JWT_SECRET` (required), `JWT_EXPIRES_IN` (default `7d`)
+- `CORS_ORIGINS` (exact browser origin allowlist; empty denies all browser origins)
+- `JWT_SECRET` (random, at least 32 characters), `JWT_EXPIRES_IN` (default `7d`)
 - `GOOGLE_WEB_CLIENT_ID` (required), `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID` (at least one required)
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (all required for uploads to work)
 - `SERVER_PUBLIC_URL` (optional — only used in server startup logs for mobile testing)
@@ -352,8 +346,6 @@ See `server/.env.example` and `client/.env.example` for the canonical list. Brie
 
 Things deliberately not built yet, in roughly priority order:
 
-- **Socket.io auth verification** — handshake currently trusts client-provided `userId`. Should verify the JWT.
-- **CORS lockdown** — Express and Socket.io both allow `*` origin. Lock to the production client origin before launch.
 - **Structured logging + error tracking** — Sentry or similar. Currently using `console.error` only.
 - **Account deletion / data export** — no endpoint to delete a user account or export their data.
 - **Soft-delete cleanup job** — deleted messages and abandoned course chats accumulate indefinitely.

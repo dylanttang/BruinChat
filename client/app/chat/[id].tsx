@@ -21,6 +21,7 @@ import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "../components/messageBubble";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
+import { uploadToCloudinary } from "../../lib/cloudinary";
 import { createSocket } from "../../lib/socket";
 import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
@@ -457,21 +458,17 @@ export default function ChatScreen() {
       const newMessages: Message[] = [];
 
       if (pendingMedia.length > 0) {
-        const formData = new FormData();
-        if (replyingTo) {
-          formData.append("replyTo", replyingTo._id);
+        const mediaUrls = [];
+        for (const item of pendingMedia) {
+          mediaUrls.push(await uploadToCloudinary(item.uri, "messages", item));
         }
-        pendingMedia.forEach((item, index) => {
-          formData.append("media", {
-            uri: item.uri,
-            name: item.fileName || `${item.type}-${index + 1}.${item.type === "video" ? "mp4" : "jpg"}`,
-            type: item.mimeType || (item.type === "video" ? "video/mp4" : "image/jpeg"),
-          } as any);
-        });
-
-        const mediaRes = await apiFetch(`/api/chats/${id}/messages/media`, {
+        const mediaRes = await apiFetch(`/api/chats/${id}/messages`, {
           method: "POST",
-          body: formData,
+          body: JSON.stringify({
+            mediaUrls,
+            mediaTypes: pendingMedia.map((item) => item.type),
+            ...(replyingTo ? { replyTo: replyingTo._id } : {}),
+          }),
         });
         const mediaData = await mediaRes.json();
         if (!mediaRes.ok) throw Object.assign(new Error(mediaData.error || `HTTP ${mediaRes.status}`), mediaData);
@@ -753,6 +750,7 @@ export default function ChatScreen() {
               placeholderTextColor={colors.mutedText}
               style={styles.input}
               value={message}
+              maxLength={4000}
               onChangeText={handleMessageChange}
               onSubmitEditing={sendMessage}
               editable={!sending}

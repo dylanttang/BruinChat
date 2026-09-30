@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { v2 as cloudinary } from 'cloudinary';
 import { devAuth } from '../middleware/devAuth.js';
@@ -20,8 +21,11 @@ router.get('/signature', devAuth, uploadRateLimit, (req, res) => {
     api_secret: process.env.CLOUDINARY_API_SECRET,
   });
 
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    return res.status(503).json({ error: 'Media uploads are not configured' });
+  }
   const timestamp = Math.round(Date.now() / 1000);
-  const params = { folder, timestamp, upload_preset: 'bruinchat_signed' };
+  const params = { folder: `${folder}/${req.user._id}`, timestamp, public_id: randomUUID(), overwrite: false, type: 'authenticated', upload_preset: 'bruinchat_signed' };
   const signature = cloudinary.utils.api_sign_request(params, process.env.CLOUDINARY_API_SECRET);
 
   res.json({
@@ -29,7 +33,10 @@ router.get('/signature', devAuth, uploadRateLimit, (req, res) => {
     timestamp,
     apiKey: process.env.CLOUDINARY_API_KEY,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-    folder,
+    folder: params.folder,
+    type: params.type,
+    publicId: params.public_id,
+    overwrite: params.overwrite,
   });
 });
 

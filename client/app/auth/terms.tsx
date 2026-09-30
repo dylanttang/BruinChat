@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacit
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { apiFetch, clearAuthToken, clearDevUserId } from "../../lib/api";
+import { apiFetch, clearAuthToken } from "../../lib/api";
 import { Colors, fonts, useTheme } from "../../context/ThemeContext";
 import GradientButton from "../../components/GradientButton";
 
@@ -56,7 +56,6 @@ export default function TermsAgreement() {
 
   const decline = async () => {
     await clearAuthToken();
-    await clearDevUserId();
     router.replace("/auth/welcome/welcome");
   };
 

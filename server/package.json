@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "cross-env NODE_PATH=node_modules node --watch index.js",
     "start": "cross-env NODE_PATH=node_modules node index.js",
-    "test:security": "cross-env NODE_PATH=node_modules node --test tests/dependency-compatibility.test.js"
+    "test:security": "cross-env NODE_PATH=node_modules node --test tests/dependency-compatibility.test.js",
+    "test": "cross-env NODE_PATH=node_modules node --test tests/*.test.js"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
@@ -18,7 +19,6 @@
     "google-auth-library": "^10.6.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.0.0",
-    "multer": "^2.1.1",
     "rate-limiter-flexible": "^11.1.0",
     "socket.io": "^4.8.3"
   },

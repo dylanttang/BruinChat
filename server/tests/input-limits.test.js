@@ -47,7 +47,7 @@ test('HTTP routes reject invalid inputs before writes and enable profile update 
   await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
   const send = async (path, body, method = 'PUT') => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt.sign({ sub: userId }, secret)}` }, body: JSON.stringify(body),
+      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt.sign({ sub: userId }, secret, { expiresIn: '1h' })}` }, body: JSON.stringify(body),
     });
     await response.text(); return response.status;
   };

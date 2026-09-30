@@ -67,7 +67,7 @@ npm run client
 
 - Install **Expo Go** from the App Store or Play Store
 - Scan the QR code from Terminal 2
-- On the welcome screen, either sign in with your UCLA Google account or tap **Skip (Dev)** to pick a test user
+- On the welcome screen, sign in with your UCLA Google account (dev impersonation has been removed)
 
 If you're testing on a physical device on the same WiFi, set `EXPO_PUBLIC_API_URL` to your computer's local IP (e.g. `http://192.168.1.100:3000`) instead of `localhost`.
 
@@ -92,3 +92,7 @@ scripts/   # fetchCourses.js (SOC scraper), seed.js
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the git workflow, branch naming, and PR process.
+
+## Security configuration
+
+See [security hardening notes](docs/security-hardening.md) for the required JWT, CORS, Cloudinary, and client rollout settings.

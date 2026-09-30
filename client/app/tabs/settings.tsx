@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, Modal, TextInput } from "react-native";
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, Modal, TextInput, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
@@ -7,6 +7,7 @@ import { useTheme, fonts, ThemeMode, Colors } from "../../context/ThemeContext";
 import { clearDevUserId, apiFetch } from "../../lib/api";
 
 const NOTIF_KEY = "@bruinchat_notif";
+const SUPPORT_EMAIL = "bruinchatdevx@gmail.com";
 
 const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
   { label: "System default", value: "system" },
@@ -166,8 +167,31 @@ export default function Settings() {
         {/* Feedback */}
         <Text style={styles.section}>Support</Text>
         <View style={styles.card}>
-          <TouchableOpacity style={[styles.row, styles.lastRow]} onPress={() => setFeedbackVisible(true)}>
+          <TouchableOpacity style={styles.row} onPress={() => setFeedbackVisible(true)}>
             <Text style={styles.rowText}>Send feedback</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.row, styles.lastRow]}
+            onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
+          >
+            <View>
+              <Text style={styles.rowText}>Contact us</Text>
+              <Text style={styles.rowSubtext}>{SUPPORT_EMAIL}</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Legal */}
+        <Text style={styles.section}>Legal</Text>
+        <View style={styles.card}>
+          <TouchableOpacity style={styles.row} onPress={() => router.push("/legal/terms")}>
+            <Text style={styles.rowText}>Terms of Service</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.row, styles.lastRow]} onPress={() => router.push("/legal/privacy")}>
+            <Text style={styles.rowText}>Privacy Policy</Text>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
         </View>

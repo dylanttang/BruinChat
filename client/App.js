@@ -50,7 +50,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>BruinChat</Text>
+      <Text style={styles.title}>BChat</Text>
       <Text style={styles.subtitle}>UCLA Class Group Chats</Text>
 
       <TouchableOpacity style={styles.button} onPress={checkServer}>

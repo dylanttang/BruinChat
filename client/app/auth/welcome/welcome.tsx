@@ -73,7 +73,7 @@ export default function Welcome() {
 
       try {
         await signInWithGoogleIdToken(idToken);
-        router.replace("/auth/questionnaire/step1");
+        router.replace("/auth/terms");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Google sign-in failed";
         setAuthError(message);
@@ -106,7 +106,7 @@ export default function Welcome() {
   const pickUser = async (user: DevUser) => {
     await setDevUserId(user._id);
     setDevPickerVisible(false);
-    router.replace("/auth/questionnaire/step1");
+    router.replace("/auth/terms");
   };
 
   const signInWithGoogle = async () => {
@@ -126,7 +126,7 @@ export default function Welcome() {
   return (
     <LinearGradient colors={colors.gradients.backdrop} style={styles.backdrop}>
     <SafeAreaView style={styles.container}>
-      <Text style={styles.wordmark}>BruinChat</Text>
+      <Text style={styles.wordmark}>BChat</Text>
       <Text style={styles.tagline}>Instantly connected chats for every UCLA class</Text>
       <Text style={styles.title}>Sign in with your{"\n"}UCLA email</Text>
 

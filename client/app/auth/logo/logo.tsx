@@ -17,7 +17,7 @@ export default function Logo() {
 
   return (
     <LinearGradient colors={colors.gradients.backdrop} style={styles.container}>
-      <Text style={[styles.wordmark, { color: colors.brand }]}>BruinChat</Text>
+      <Text style={[styles.wordmark, { color: colors.brand }]}>BChat</Text>
       <Image
         source={require("../../../src/assets/icon.png")}
         style={styles.icon}

@@ -114,7 +114,7 @@ export default function Home() {
         <LinearGradient colors={colors.gradients.sent} style={styles.logoTile}>
           <Ionicons name="chatbubbles" size={18} color={colors.onPrimary} />
         </LinearGradient>
-        <Text style={styles.title}>BruinChat</Text>
+        <Text style={styles.title}>BChat</Text>
         <TouchableOpacity
           style={styles.profileButton}
           onPress={() => router.push("/tabs/profile")}

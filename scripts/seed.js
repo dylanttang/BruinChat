@@ -27,7 +27,7 @@ async function main() {
   const [mark, ariana, alyssa, jacob, jonathan, lucas, michelle, dummy] = users;
 
   const groupChat = await Chat.create({
-    name: 'BruinChat Dev Team',
+    name: 'BChat Dev Team',
     isGroup: true,
     members: users.map((u) => u._id),
     createdBy: mark._id,
@@ -45,7 +45,7 @@ async function main() {
 
   const now = Date.now();
   const messages = await Message.insertMany([
-    { chatId: groupChat._id, senderId: mark._id, text: 'Welcome to BruinChat!', createdAt: new Date(now - 60_000), updatedAt: new Date(now - 60_000) },
+    { chatId: groupChat._id, senderId: mark._id, text: 'Welcome to BChat!', createdAt: new Date(now - 60_000), updatedAt: new Date(now - 60_000) },
     { chatId: groupChat._id, senderId: michelle._id, text: 'Hyped to ship this 🎉', createdAt: new Date(now - 45_000), updatedAt: new Date(now - 45_000) },
     { chatId: groupChat._id, senderId: jacob._id, text: 'Chat endpoints are live ✅', createdAt: new Date(now - 30_000), updatedAt: new Date(now - 30_000) },
     { chatId: groupChat._id, senderId: ariana._id, text: 'Dark mode also live!', createdAt: new Date(now - 15_000), updatedAt: new Date(now - 15_000) },

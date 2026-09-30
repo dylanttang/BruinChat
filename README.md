@@ -1,4 +1,4 @@
-# BruinChat
+# BChat
 
 A mobile app for UCLA students that automatically generates group chats for shared classes. Sign in with your UCLA email, pick your courses, and get dropped into the right group chats with classmates.
 

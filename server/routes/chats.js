@@ -12,6 +12,7 @@ import User from '../../models/User.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { sendPush } from '../utils/push.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
+import { hasAcceptedTerms, TERMS_REQUIRED_ERROR } from '../utils/terms.js';
 
 const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
@@ -379,6 +380,9 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
     if (req.user.bannedAt) {
       return res.status(403).json({ error: 'Your account has been banned' });
     }
+    if (!hasAcceptedTerms(req.user)) {
+      return res.status(403).json(TERMS_REQUIRED_ERROR);
+    }
 
     const chatId = req.params.id;
 
@@ -491,6 +495,10 @@ router.post('/:id/messages/media', devAuth, messageSendRateLimit, (req, res) => 
         deleteUploadedFiles(req.files);
         return res.status(403).json({ error: 'Your account has been banned' });
       }
+      if (!hasAcceptedTerms(req.user)) {
+        deleteUploadedFiles(req.files);
+        return res.status(403).json(TERMS_REQUIRED_ERROR);
+      }
 
       const chatId = req.params.id;
       const membership = await requireChatMember(chatId, req.user._id);
@@ -544,6 +552,9 @@ router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (re
   try {
     if (req.user.bannedAt) {
       return res.status(403).json({ error: 'Your account has been banned' });
+    }
+    if (!hasAcceptedTerms(req.user)) {
+      return res.status(403).json(TERMS_REQUIRED_ERROR);
     }
 
     const { chatId, id: messageId } = req.params;
@@ -649,6 +660,13 @@ router.delete('/:id/members/me', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
   try {
+    if (req.user.bannedAt) {
+      return res.status(403).json({ error: 'Your account has been banned' });
+    }
+    if (!hasAcceptedTerms(req.user)) {
+      return res.status(403).json(TERMS_REQUIRED_ERROR);
+    }
+
     const { chatId, id: messageId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(chatId) || !mongoose.Types.ObjectId.isValid(messageId)) {

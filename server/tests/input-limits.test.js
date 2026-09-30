@@ -8,6 +8,7 @@ import Chat from '../../models/Chat.js';
 import users from '../routes/users.js';
 import chats from '../routes/chats.js';
 import { validateMessageLengths, PROFILE_LIMITS } from '../utils/inputLimits.js';
+import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
 
 const userId = 'aaaaaaaaaaaaaaaaaaaaaaaa', chatId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 
@@ -32,7 +33,7 @@ test('HTTP routes reject invalid inputs before writes and enable profile update 
   const previousSecret = process.env.JWT_SECRET;
   process.env.JWT_SECRET = secret;
   let writes = 0, updateOptions;
-  User.findById = () => ({ lean: async () => ({ _id: userId }) });
+  User.findById = () => ({ lean: async () => ({ _id: userId, termsVersion: CURRENT_TERMS_VERSION }) });
   User.findByIdAndUpdate = (_id, update, options) => {
     writes++; updateOptions = options;
     const query = { populate: () => query, lean: async () => ({ _id: userId, ...update }) };

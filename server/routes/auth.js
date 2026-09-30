@@ -7,7 +7,13 @@ import { authRateLimit } from '../middleware/rateLimit.js';
 const router = Router();
 const googleClient = new OAuth2Client();
 
-const UCLA_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@(g\.)?ucla\.edu$/;
+// Only accounts managed by UCLA's Google Workspace (student accounts, which
+// sign in through UCLA Logon + Duo). Google sets the signed `hd` claim only
+// for Workspace accounts, so a personal Google account registered with a UCLA
+// address can't pass — checking the email suffix alone would let it through.
+// Students' @ucla.edu addresses are aliases of their @g.ucla.edu account, so
+// Google always reports them as @g.ucla.edu here.
+const UCLA_HOSTED_DOMAIN = 'g.ucla.edu';
 
 function getGoogleClientIds() {
   return [
@@ -28,7 +34,7 @@ function signAppToken(user) {
       role: user.role,
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
   );
 }
 
@@ -69,8 +75,10 @@ router.post('/google', authRateLimit, async (req, res) => {
       return res.status(403).json({ error: 'Google email is not verified' });
     }
 
-    if (!UCLA_EMAIL_RE.test(email)) {
-      return res.status(403).json({ error: 'Please sign in with a UCLA email address' });
+    if (payload.hd !== UCLA_HOSTED_DOMAIN || !email.endsWith(`@${UCLA_HOSTED_DOMAIN}`)) {
+      return res.status(403).json({
+        error: 'Please sign in with your @g.ucla.edu account (the Google version of your @ucla.edu email)',
+      });
     }
 
     const username = usernameFromEmail(email);

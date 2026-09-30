@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Text, StyleSheet } from "react-native";
+import { Platform, Text, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -7,6 +7,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { signInWithGoogleIdToken } from "../../../lib/api";
+import { resolveSignedInRoute } from "../../../lib/session";
+import { signInWithNativeGoogle } from "../../../lib/googleNativeSignIn";
 import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
 import GradientButton from "../../../components/GradientButton";
 
@@ -37,32 +39,36 @@ export default function Welcome() {
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     selectAccount: true,
+    // Only list UCLA accounts in Google's picker. This is a convenience; the
+    // server enforces the domain.
+    extraParams: { hd: "g.ucla.edu" },
   });
 
+  // Trade the Google ID token for our own session, then route the user.
+  const finishGoogleSignIn = async (idToken: string) => {
+    try {
+      await signInWithGoogleIdToken(idToken);
+      router.replace(await resolveSignedInRoute());
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Google sign-in failed";
+      setAuthError(message);
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  // Web: expo-auth-session delivers the result through `response`.
   useEffect(() => {
-    const finishGoogleSignIn = async () => {
-      if (response?.type !== "success") return;
+    if (response?.type !== "success") return;
 
-      const idToken = response.params.id_token;
-      if (!idToken) {
-        setAuthError("Google did not return an ID token. Check your OAuth client IDs.");
-        setSigningIn(false);
-        return;
-      }
-
-      try {
-        await signInWithGoogleIdToken(idToken);
-        router.replace("/auth/terms");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Google sign-in failed";
-        setAuthError(message);
-      } finally {
-        setSigningIn(false);
-      }
-    };
-
-    finishGoogleSignIn();
-  }, [response, router]);
+    const idToken = response.params.id_token;
+    if (!idToken) {
+      setAuthError("Google did not return an ID token. Check your OAuth client IDs.");
+      setSigningIn(false);
+      return;
+    }
+    finishGoogleSignIn(idToken);
+  }, [response]);
 
   const signInWithGoogle = async () => {
     setAuthError(null);
@@ -72,8 +78,26 @@ export default function Welcome() {
     }
 
     setSigningIn(true);
-    const result = await promptAsync();
-    if (result.type !== "success") {
+
+    if (Platform.OS === "web") {
+      const result = await promptAsync();
+      if (result.type !== "success") {
+        setSigningIn(false);
+      }
+      return;
+    }
+
+    // iOS/Android: Google's native sign-in sheet.
+    try {
+      const idToken = await signInWithNativeGoogle();
+      if (!idToken) {
+        setSigningIn(false);
+        return;
+      }
+      await finishGoogleSignIn(idToken);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Google sign-in failed";
+      setAuthError(message);
       setSigningIn(false);
     }
   };
@@ -85,7 +109,8 @@ export default function Welcome() {
       <Text style={styles.tagline}>Instantly connected chats for every UCLA class</Text>
       <Text style={styles.title}>Sign in with your UCLA{"\n"}Google account</Text>
       <Text style={styles.hint}>
-        Use your @ucla.edu or @g.ucla.edu account. BChat is only for UCLA students.
+        Use your @g.ucla.edu account (the Google version of your @ucla.edu
+        email). BChat is only for UCLA students.
       </Text>
 
       {authError && <Text style={styles.errorText}>{authError}</Text>}
@@ -94,7 +119,7 @@ export default function Welcome() {
       <GradientButton
         label="Sign in with Google"
         onPress={signInWithGoogle}
-        disabled={isGoogleConfigured && !request}
+        disabled={Platform.OS === "web" && isGoogleConfigured && !request}
         loading={signingIn}
         style={styles.signInBtn}
         icon={<Ionicons name="logo-google" size={18} color={colors.onPrimary} />}

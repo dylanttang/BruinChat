@@ -55,7 +55,13 @@
           "microphonePermission": "BChat needs microphone access to record sound when you take videos to share in class chats."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.570423026036-ic6kv2r4pncr3fp025cmg9uemd96niqm"
+        }
+      ]
     ]
   }
 }

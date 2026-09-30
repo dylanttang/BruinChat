@@ -330,7 +330,7 @@ See `server/.env.example` and `client/.env.example` for the canonical list. Brie
 - `PORT` (default 3000)
 - `MONGODB_URI` (required), `MONGODB_DB` (optional — overrides the DB name from the URI)
 - `CORS_ORIGINS` (exact browser origin allowlist; empty denies all browser origins)
-- `JWT_SECRET` (random, at least 32 characters), `JWT_EXPIRES_IN` (default `7d`)
+- `JWT_SECRET` (random, at least 32 characters), `JWT_EXPIRES_IN` (default `30d`)
 - `GOOGLE_WEB_CLIENT_ID` (required), `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID` (at least one required)
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (all required for uploads to work)
 - `SERVER_PUBLIC_URL` (optional — only used in server startup logs for mobile testing)

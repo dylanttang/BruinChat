@@ -3,16 +3,23 @@ import { Image, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme, fonts } from "../../../context/ThemeContext";
+import { resolveSignedInRoute } from "../../../lib/session";
 
 export default function Logo() {
   const router = useRouter();
   const { colors } = useTheme();
 
+  // Show the logo for at least a second while checking for a saved session,
+  // so returning users skip sign-in.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      router.replace("/auth/welcome/welcome");
-    }, 1000);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    const minDelay = new Promise((resolve) => setTimeout(resolve, 1000));
+    Promise.all([resolveSignedInRoute(), minDelay]).then(([route]) => {
+      if (!cancelled) router.replace(route);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (

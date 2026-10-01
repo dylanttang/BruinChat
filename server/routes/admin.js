@@ -5,6 +5,7 @@ import User from '../../models/User.js';
 import Message from '../../models/Message.js';
 import Chat from '../../models/Chat.js';
 import { adminAuth } from '../middleware/adminAuth.js';
+import { deleteMediaAssets, messageMediaReferences } from '../utils/media.js';
 import { sendPush } from '../utils/push.js';
 
 const router = Router();
@@ -253,6 +254,7 @@ router.post('/reports/resolve', adminAuth, async (req, res) => {
 
     if (removeMessage && target && !target.deletedAt) {
       const message = await Message.findById(targetId);
+      await deleteMediaAssets(messageMediaReferences(message));
       message.text = '';
       message.mediaUrl = '';
       message.mediaUrls = [];

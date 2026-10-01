@@ -5,7 +5,7 @@ import Chat from '../../models/Chat.js';
 import Message from '../../models/Message.js';
 import User from '../../models/User.js';
 import { devAuth } from '../middleware/devAuth.js';
-import { serializeMedia } from '../utils/media.js';
+import { deleteMediaAssets, messageMediaReferences, serializeMedia } from '../utils/media.js';
 import { validateMessage, validateText } from '../utils/validation.js';
 import { sendPush } from '../utils/push.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
@@ -365,6 +365,8 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
       pushToken: { $ne: null },
       notifEnabled: true,
       blockedUsers: { $ne: req.user._id },
+      bannedAt: null,
+      deletedAt: null,
     }).select('pushToken classNotif replyNotif _id').lean();
 
     if (recipients.length > 0) {
@@ -592,6 +594,7 @@ router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
       return res.status(403).json({ error: 'Only the sender can delete this message' });
     }
 
+    await deleteMediaAssets(messageMediaReferences(message));
     message.text = '';
     message.mediaUrl = '';
     message.mediaUrls = [];

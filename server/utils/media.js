@@ -61,3 +61,27 @@ export function mediaResponseMiddleware(req, res, next) {
   };
   next();
 }
+
+// Stored media references on a message (single mediaUrl or mediaUrls).
+export function messageMediaReferences(message) {
+  return [...(message?.mediaUrls || []), message?.mediaUrl].filter(Boolean);
+}
+
+// Permanently delete the Cloudinary assets behind stored references, as the
+// Privacy Policy promises for deleted messages and accounts. References that
+// aren't our authenticated uploads (e.g. Google profile photos) are skipped.
+// Best-effort: a failed delete is logged and doesn't block the caller.
+export async function deleteMediaAssets(values) {
+  if (!process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) return;
+  const assets = values.map(parseMediaReference).filter(Boolean);
+  await Promise.all(assets.map((asset) =>
+    cloudinary.uploader.destroy(asset.publicId, {
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+      resource_type: asset.resourceType,
+      type: 'authenticated',
+      invalidate: true,
+    }).catch((err) => console.error(`Failed to delete Cloudinary asset ${asset.publicId}:`, err.message))
+  ));
+}

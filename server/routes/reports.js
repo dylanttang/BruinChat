@@ -16,6 +16,8 @@ async function notifyAdmins(report, reporterId) {
     const admins = await User.find({
       role: 'admin',
       pushToken: { $ne: null },
+      bannedAt: null,
+      deletedAt: null,
       _id: { $ne: reporterId },
     }).select('pushToken').lean();
     if (admins.length === 0) return;

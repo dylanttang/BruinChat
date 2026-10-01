@@ -8,6 +8,7 @@ import Feedback from '../../models/Feedback.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { enrollmentRateLimit } from '../middleware/rateLimit.js';
 import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
+import { deleteMediaAssets, messageMediaReferences } from '../utils/media.js';
 import { PROFILE_LIMITS, validString, validCloudinaryUrl } from '../utils/validation.js';
 
 const router = Router();
@@ -50,11 +51,13 @@ router.put('/me/terms', devAuth, async (req, res) => {
       });
     }
 
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { termsAcceptedAt: new Date(), termsVersion: CURRENT_TERMS_VERSION },
-      { new: true }
-    ).lean();
+    // Only record a new date when this version hasn't been accepted yet, so
+    // re-accepting (e.g. signing in again) keeps the original date.
+    await User.updateOne(
+      { _id: req.user._id, termsVersion: { $ne: CURRENT_TERMS_VERSION } },
+      { termsAcceptedAt: new Date(), termsVersion: CURRENT_TERMS_VERSION }
+    );
+    const user = await User.findById(req.user._id).select('termsAcceptedAt termsVersion').lean();
 
     res.json({ termsAcceptedAt: user.termsAcceptedAt, termsVersion: user.termsVersion });
   } catch (err) {
@@ -370,7 +373,8 @@ router.delete('/:id/block', devAuth, async (req, res) => {
 //
 // Matches the Privacy Policy (docs/legal/privacy-policy.md, section 6):
 //   - Messages they sent are cleared the same way as a single-message delete
-//     (text and media removed, a "deleted" placeholder stays in the chat)
+//     (text and media removed, a "deleted" placeholder stays in the chat), and
+//     their photos/videos and uploaded avatar are deleted from Cloudinary
 //   - Their reactions are removed from other people's messages
 //   - They're removed from every chat, and their feedback is deleted
 //   - The user document becomes a tombstone named "Deleted user" with no
@@ -388,6 +392,10 @@ router.delete('/me', devAuth, async (req, res) => {
     const userId = req.user._id;
     const now = new Date();
 
+    const sentMedia = await Message.find({ senderId: userId })
+      .select('mediaUrl mediaUrls')
+      .lean();
+    await deleteMediaAssets([...sentMedia.flatMap(messageMediaReferences), req.user.avatarUrl].filter(Boolean));
 
     await Message.updateMany(
       { senderId: userId, deletedAt: null },

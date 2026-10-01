@@ -166,17 +166,29 @@ function getReactionUserId(reaction: Reaction): string {
 }
 
 function groupReactions(reactions: Reaction[] = [], currentUserId: string | null) {
-  const grouped = new Map<string, { emoji: string; count: number; reactedByMe: boolean }>();
+  const grouped = new Map<
+    string,
+    { emoji: string; count: number; reactedByMe: boolean; names: string[] }
+  >();
 
   reactions.forEach((reaction) => {
     const existing = grouped.get(reaction.emoji) ?? {
       emoji: reaction.emoji,
       count: 0,
       reactedByMe: false,
+      names: [],
     };
 
+    const isMine = getReactionUserId(reaction) === currentUserId;
     existing.count += 1;
-    existing.reactedByMe = existing.reactedByMe || getReactionUserId(reaction) === currentUserId;
+    existing.reactedByMe = existing.reactedByMe || isMine;
+    // Names for the "who reacted" sheet; "You" goes first.
+    if (isMine) {
+      existing.names.unshift("You");
+    } else {
+      const name = typeof reaction.userId === "string" ? undefined : reaction.userId.displayName;
+      existing.names.push(name || "Someone");
+    }
     grouped.set(reaction.emoji, existing);
   });
 

@@ -26,7 +26,7 @@ export default function Logo() {
     <LinearGradient colors={colors.gradients.backdrop} style={styles.container}>
       <Text style={[styles.wordmark, { color: colors.brand }]}>BChat</Text>
       <Image
-        source={require("../../../src/assets/icon.png")}
+        source={require("../../../src/assets/splash-icon.png")}
         style={styles.icon}
         resizeMode="contain"
       />

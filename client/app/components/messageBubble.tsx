@@ -37,6 +37,11 @@ type Props = {
   onPressUser?: () => void;
 };
 
+// How far the reaction pills hang below the bubble, and the room kept free
+// for the timestamp beside them on short bubbles.
+const REACTION_OVERHANG = 12;
+const TIMESTAMP_ROOM = 56;
+
 function isVideoUrl(url: string) {
   return /\.(mp4|mov|m4v|webm)(\?|$)/i.test(url);
 }
@@ -85,7 +90,9 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [expandedMedia, setExpandedMedia] = useState<{ uri: string; type: MediaKind } | null>(null);
   const [videoEnded, setVideoEnded] = useState(false);
+  const [reactionsWidth, setReactionsWidth] = useState(0);
   const expandedVideoRef = useRef<Video>(null);
+  const hasReactions = !!item.reactions?.length;
   const mediaUrls = item.mediaUrls?.length ? item.mediaUrls : item.mediaUrl ? [item.mediaUrl] : [];
   const toMediaUri = (url: string) => (url.startsWith("http") || url.startsWith("file:") ? url : `${API_URL}${url}`);
   const getMediaKind = (url: string, index: number): MediaKind => (
@@ -121,6 +128,16 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
             </Text>
           )}
 
+          {/* Reactions float over the bubble's bottom-right corner instead of
+              taking their own row, so reacting never changes the message's height. */}
+          <View
+            style={[
+              { alignSelf: isMe ? "flex-end" : "flex-start" },
+              // Keep short bubbles wide enough that the reactions don't cover
+              // the timestamp on the left.
+              hasReactions && !isMe && { minWidth: reactionsWidth + TIMESTAMP_ROOM },
+            ]}
+          >
           <LinearGradient
             colors={
               hasMedia
@@ -181,13 +198,12 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
             )}
           </LinearGradient>
 
-          <Text style={[styles.time, { alignSelf: isMe ? "flex-end" : "flex-start" }]}>
-            {item.time}
-          </Text>
-
-          {!!item.reactions?.length && (
-            <View style={[styles.reactionsRow, { justifyContent: isMe ? "flex-end" : "flex-start" }]}>
-              {item.reactions.map((reaction) => (
+          {hasReactions && (
+            <View
+              style={styles.reactionsOverlay}
+              onLayout={(e) => setReactionsWidth(e.nativeEvent.layout.width)}
+            >
+              {item.reactions!.map((reaction) => (
                 <TouchableOpacity
                   key={reaction.emoji}
                   activeOpacity={0.7}
@@ -198,12 +214,25 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
                   ]}
                 >
                   <Text style={styles.reactionText}>
-                    {reaction.emoji} {reaction.count}
+                    {reaction.count > 1 ? `${reaction.emoji} ${reaction.count}` : reaction.emoji}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           )}
+          </View>
+
+          <Text
+            style={[
+              styles.time,
+              { alignSelf: isMe ? "flex-end" : "flex-start" },
+              // Your timestamp is on the same side as the reactions; slide it
+              // left of them rather than down.
+              hasReactions && isMe && { marginRight: reactionsWidth + 2 },
+            ]}
+          >
+            {item.time}
+          </Text>
         </View>
       </TouchableOpacity>
 
@@ -356,24 +385,31 @@ function makeStyles(colors: Colors) {
       color: colors.mutedText,
       marginTop: 2,
     },
-    reactionsRow: {
+    // Hangs half outside the bubble's bottom-right corner (Instagram-style).
+    reactionsOverlay: {
+      position: "absolute",
+      right: -4,
+      bottom: -REACTION_OVERHANG,
       flexDirection: "row",
-      flexWrap: "wrap",
-      marginTop: 4,
     },
     reactionPill: {
-      minHeight: 24,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 12,
-      backgroundColor: colors.inputBg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginRight: 4,
-      marginBottom: 4,
+      minHeight: 22,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 11,
+      backgroundColor: colors.card,
+      // Background-colored ring makes the pill look cut out of the bubble.
+      borderWidth: 2,
+      borderColor: colors.background,
+      marginLeft: 2,
+      justifyContent: "center",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.12,
+      shadowRadius: 2,
+      elevation: 2,
     },
     myReactionPill: {
-      borderColor: colors.brand,
       backgroundColor: colors.brandSoft,
     },
     reactionText: {

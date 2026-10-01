@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable, Animated } from "react-native";
 import { ResizeMode, Video } from "expo-av";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,7 +29,8 @@ type Props = {
     time: string;
     mine: boolean;
     replyTo?: ReplyMessage | null;
-    reactions?: { emoji: string; count: number; reactedByMe: boolean }[];
+    // names: who reacted with this emoji ("You" first), for the reactions sheet.
+    reactions?: { emoji: string; count: number; reactedByMe: boolean; names: string[] }[];
   };
   onLongPress?: () => void;
   onReact?: (emoji: string) => void;
@@ -41,6 +42,10 @@ type Props = {
 // for the timestamp beside them on short bubbles.
 const REACTION_OVERHANG = 12;
 const TIMESTAMP_ROOM = 56;
+
+// Double-tapping a message reacts with this, like Instagram's double-tap to like.
+const LIKE_EMOJI = "❤️";
+const DOUBLE_TAP_MS = 280;
 
 function isVideoUrl(url: string) {
   return /\.(mp4|mov|m4v|webm)(\?|$)/i.test(url);
@@ -91,8 +96,55 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
   const [expandedMedia, setExpandedMedia] = useState<{ uri: string; type: MediaKind } | null>(null);
   const [videoEnded, setVideoEnded] = useState(false);
   const [reactionsWidth, setReactionsWidth] = useState(0);
+  const [showReactions, setShowReactions] = useState(false);
   const expandedVideoRef = useRef<Video>(null);
   const hasReactions = !!item.reactions?.length;
+  const hasMyReaction = !!item.reactions?.some((r) => r.reactedByMe);
+
+  const heartAnim = useRef(new Animated.Value(0)).current;
+  const lastTapRef = useRef(0);
+  const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (pendingTapRef.current) clearTimeout(pendingTapRef.current);
+  }, []);
+
+  // Only ever sets the heart: double-tapping a message you already liked
+  // shouldn't un-like it (removing is done from the reactions sheet). If you'd
+  // reacted with something else, the server swaps it for the heart.
+  const likeMessage = () => {
+    const alreadyLiked = item.reactions?.some((r) => r.emoji === LIKE_EMOJI && r.reactedByMe);
+    if (!alreadyLiked) onReact?.(LIKE_EMOJI);
+
+    heartAnim.setValue(0);
+    Animated.sequence([
+      Animated.spring(heartAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
+      Animated.timing(heartAnim, { toValue: 0, duration: 200, delay: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  // A second tap within DOUBLE_TAP_MS likes the message. A single tap's own
+  // action (e.g. opening a photo) waits that long so it doesn't fire on a like.
+  const handleTap = (onSingleTap?: () => void) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+      lastTapRef.current = 0;
+      if (pendingTapRef.current) {
+        clearTimeout(pendingTapRef.current);
+        pendingTapRef.current = null;
+      }
+      likeMessage();
+      return;
+    }
+
+    lastTapRef.current = now;
+    if (onSingleTap) {
+      pendingTapRef.current = setTimeout(() => {
+        pendingTapRef.current = null;
+        onSingleTap();
+      }, DOUBLE_TAP_MS);
+    }
+  };
   const mediaUrls = item.mediaUrls?.length ? item.mediaUrls : item.mediaUrl ? [item.mediaUrl] : [];
   const toMediaUri = (url: string) => (url.startsWith("http") || url.startsWith("file:") ? url : `${API_URL}${url}`);
   const getMediaKind = (url: string, index: number): MediaKind => (
@@ -112,6 +164,7 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
     <>
       <TouchableOpacity
         activeOpacity={0.8}
+        onPress={() => handleTap()}
         onLongPress={onLongPress}
         style={[styles.row, { justifyContent: isMe ? "flex-end" : "flex-start" }]}
       >
@@ -174,7 +227,7 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
                       key={`${url}-${index}`}
                       activeOpacity={0.85}
                       onLongPress={onLongPress}
-                      onPress={() => setExpandedMedia({ uri: mediaUri, type: mediaType })}
+                      onPress={() => handleTap(() => setExpandedMedia({ uri: mediaUri, type: mediaType }))}
                     >
                       {mediaType === "video" ? (
                         <View style={styles.videoThumbWrap}>
@@ -198,6 +251,21 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
             )}
           </LinearGradient>
 
+          {/* Heart that pops over the bubble on double-tap. */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              styles.heartBurst,
+              {
+                opacity: heartAnim,
+                transform: [{ scale: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }],
+              },
+            ]}
+          >
+            <Text style={styles.heartBurstText}>{LIKE_EMOJI}</Text>
+          </Animated.View>
+
           {hasReactions && (
             <View
               style={styles.reactionsOverlay}
@@ -207,7 +275,8 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
                 <TouchableOpacity
                   key={reaction.emoji}
                   activeOpacity={0.7}
-                  onPress={() => onReact?.(reaction.emoji)}
+                  onPress={() => setShowReactions(true)}
+                  accessibilityLabel={`${reaction.emoji} ${reaction.count}. Show who reacted`}
                   style={[
                     styles.reactionPill,
                     reaction.reactedByMe && styles.myReactionPill,
@@ -291,6 +360,50 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
               </TouchableOpacity>
             </View>
           )}
+        </View>
+      </Modal>
+
+      {/* Who reacted, Instagram-style. Tapping a row removes your reaction or
+          adds the same one. */}
+      <Modal
+        transparent
+        visible={showReactions && hasReactions}
+        animationType="fade"
+        onRequestClose={() => setShowReactions(false)}
+      >
+        <View style={styles.sheetContainer}>
+          <Pressable style={styles.sheetBackdrop} onPress={() => setShowReactions(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Reactions</Text>
+            {item.reactions?.map((reaction) => (
+              <TouchableOpacity
+                key={reaction.emoji}
+                activeOpacity={0.7}
+                style={styles.sheetRow}
+                onPress={() => {
+                  onReact?.(reaction.emoji);
+                  setShowReactions(false);
+                }}
+                accessibilityLabel={
+                  reaction.reactedByMe
+                    ? `Remove your ${reaction.emoji} reaction`
+                    : hasMyReaction
+                      ? `Switch your reaction to ${reaction.emoji}`
+                      : `React ${reaction.emoji} too`
+                }
+              >
+                <Text style={styles.sheetEmoji}>{reaction.emoji}</Text>
+                <Text style={styles.sheetNames} numberOfLines={2}>
+                  {reaction.names.join(", ")}
+                </Text>
+                {/* One reaction per person, so picking another emoji switches yours. */}
+                <Text style={[styles.sheetAction, reaction.reactedByMe && styles.sheetActionRemove]}>
+                  {reaction.reactedByMe ? "Tap to remove" : hasMyReaction ? "Switch" : "React too"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </Modal>
     </>
@@ -411,6 +524,69 @@ function makeStyles(colors: Colors) {
     },
     myReactionPill: {
       backgroundColor: colors.brandSoft,
+    },
+    heartBurst: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    heartBurstText: {
+      fontSize: 40,
+    },
+    sheetContainer: {
+      flex: 1,
+      justifyContent: "flex-end",
+    },
+    sheetBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0,0,0,0.35)",
+    },
+    sheet: {
+      backgroundColor: colors.card,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 36,
+    },
+    sheetHandle: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.border,
+      alignSelf: "center",
+      marginBottom: 12,
+    },
+    sheetTitle: {
+      fontFamily: fonts.bold,
+      fontSize: 16,
+      color: colors.text,
+      marginBottom: 4,
+    },
+    sheetRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    sheetEmoji: {
+      fontSize: 22,
+      marginRight: 12,
+    },
+    sheetNames: {
+      flex: 1,
+      fontFamily: fonts.regular,
+      fontSize: 15,
+      color: colors.text,
+    },
+    sheetAction: {
+      fontFamily: fonts.medium,
+      fontSize: 13,
+      color: colors.brand,
+      marginLeft: 12,
+    },
+    sheetActionRemove: {
+      color: colors.danger,
     },
     reactionText: {
       fontFamily: fonts.regular,

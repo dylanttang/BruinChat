@@ -444,14 +444,18 @@ router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (re
       return res.status(400).json({ error: 'Cannot react to a deleted message' });
     }
 
+    // One reaction per person (like Instagram): reacting with the same emoji
+    // removes it, and a different emoji replaces your old one. Clearing all of
+    // the user's reactions also collapses any duplicates from before this rule.
     const userId = req.user._id.toString();
-    const existingIndex = message.reactions.findIndex(
+    const alreadyReactedWithThis = message.reactions.some(
       (reaction) => reaction.emoji === emoji && reaction.userId.toString() === userId
     );
 
-    if (existingIndex >= 0) {
-      message.reactions.splice(existingIndex, 1);
-    } else {
+    message.reactions = message.reactions.filter(
+      (reaction) => reaction.userId.toString() !== userId
+    );
+    if (!alreadyReactedWithThis) {
       message.reactions.push({ emoji, userId: req.user._id });
     }
 

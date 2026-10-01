@@ -89,6 +89,10 @@ models/    # Mongoose schemas (shared by server + scripts)
 scripts/   # fetchCourses.js (SOC scraper), seed.js
 ```
 
+## Website
+
+The public website (landing page, Privacy Policy, Terms of Service) lives in its own repo, [jonathantchiu/bchat-website](https://github.com/jonathantchiu/bchat-website), and auto-deploys to https://bchat-five.vercel.app. The legal text is still written here in `docs/legal/`; when it changes, copy both files into that repo's `legal/` folder and run `npm run legal` there.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the git workflow, branch naming, and PR process.

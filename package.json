@@ -6,7 +6,8 @@
     "server": "cd server && npm run dev",
     "client": "cd client && npx expo start",
     "install:all": "cd server && npm install && cd ../client && npm install",
-    "legal:sync": "node scripts/syncLegal.js"
+    "legal:sync": "node scripts/syncLegal.js",
+    "website:legal": "node website/scripts/build-legal.mjs"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BChat: Group chats for every UCLA class</title>
+  <meta name="description" content="BChat puts you in a group chat for every UCLA class you're taking. Sign in with your UCLA Google account, add your courses, and start talking with classmates.">
+  <meta name="theme-color" content="#FFF8F1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#17161F" media="(prefers-color-scheme: dark)">
+  <meta property="og:title" content="BChat: Group chats for every UCLA class">
+  <meta property="og:description" content="Add your classes, get dropped into the right group chats with your classmates.">
+  <meta property="og:image" content="assets/logo.png">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="container nav" aria-label="Main">
+      <a class="brand" href="./">
+        <img src="assets/logo.png" alt="" width="38" height="41">
+        BChat
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#safety">Safety</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+      <a class="btn btn-primary btn-small" href="#get">Get BChat</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container hero-inner">
+        <div>
+          <span class="eyebrow">Made by UCLA students, for UCLA students</span>
+          <h1 id="hero-title">Every UCLA class. <span class="accent">Instantly connected.</span></h1>
+          <p class="lead">Add your courses and BChat drops you into a group chat with everyone in each class. No hunting for GroupMe links, no Discord servers full of bots.</p>
+          <div class="hero-ctas">
+            <a class="btn btn-primary" href="#get">
+              <span class="store-badge"><small>Coming soon</small>to iPhone</span>
+            </a>
+            <a class="btn btn-ghost" href="#how">See how it works</a>
+          </div>
+          <p class="hero-note">Free for UCLA students. Sign in with your UCLA Google account.</p>
+        </div>
+
+        <div class="phone-stage">
+          <div class="float blue float-1" aria-hidden="true">Hey, are you in CS 35L?</div>
+          <div class="float orange float-2" aria-hidden="true">Study group tonight? 📚</div>
+          <div class="float blue float-3" aria-hidden="true">Joined 5 class chats ✨</div>
+
+          <div class="phone" role="img" aria-label="BChat class chat for COM SCI 35L with classmates trading homework tips">
+            <div class="screen" aria-hidden="true">
+              <div class="app-header">
+                <span class="back">←</span>
+                <span class="title">COM SCI 35L — Software Construction</span>
+                <span class="dots">•••</span>
+              </div>
+              <div class="messages">
+                <span class="day">Today</span>
+                <div>
+                  <div class="who">Maya</div>
+                  <div class="msg">
+                    <span class="avatar" style="background:#748ED0">M</span>
+                    <div class="bubble">anyone else stuck on the git rebase part of hw 3? 😭</div>
+                  </div>
+                </div>
+                <div class="msg me">
+                  <div class="bubble">same lol. TA said office hours are at 4 in Boelter</div>
+                </div>
+                <div>
+                  <div class="who">Alex</div>
+                  <div class="msg">
+                    <span class="avatar" style="background:#FE7A45">A</span>
+                    <div>
+                      <div class="bubble">lifesaver 🙏</div>
+                      <span class="reaction">❤️ 3</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="msg me">
+                  <div class="bubble">study group at Powell after? 👀</div>
+                </div>
+                <div>
+                  <div class="who">Jordan</div>
+                  <div class="msg">
+                    <span class="avatar" style="background:#5B8FE0">J</span>
+                    <div class="bubble">down, saving a table</div>
+                  </div>
+                </div>
+              </div>
+              <div class="typing">Maya is typing…</div>
+              <div class="composer">
+                <span class="plus">+</span>
+                <span class="field">Type a message...</span>
+                <span class="send">➤</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- The problem, told as a chat -->
+    <section aria-labelledby="why-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="why-title">Finding your classmates shouldn't be a side quest</h2>
+        </div>
+        <div class="convo">
+          <p class="line them">UCLA students mostly use 3rd party platforms to connect with classmates.</p>
+          <p class="line us">What are some of these student messaging apps?</p>
+          <p class="line them">Well, there's GroupMe and Discord, but they both kinda suck.</p>
+          <p class="line us">Yeah, there's always bots for some reason… 🤖</p>
+          <p class="line them">So we made BChat: one chat per class, only real UCLA students.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features" id="features" aria-labelledby="features-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="features-title">Everything your class chat needs</h2>
+          <p>Built around how UCLA students actually use group chats.</p>
+        </div>
+        <div class="grid">
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 20h5v-2a3 3 0 0 0-5.36-1.86M17 20H7m10 0v-2c0-.66-.13-1.28-.36-1.86M7 20H2v-2a3 3 0 0 1 5.36-1.86M7 20v-2c0-.66.13-1.28.36-1.86m0 0a5 5 0 0 1 9.28 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/></svg></div>
+            <h3>Auto-joined class chats</h3>
+            <p>Pick your courses from the UCLA Schedule of Classes and you're instantly in a chat with everyone else taking them.</p>
+          </article>
+          <article class="card">
+            <div class="icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-5 5v-5z"/></svg></div>
+            <h3>Real-time messaging</h3>
+            <p>Replies, emoji reactions, typing indicators, and photo and video sharing, all live.</p>
+          </article>
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15v2m-6 4h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2zm10-10V7a4 4 0 0 0-8 0v4h8z"/></svg></div>
+            <h3>UCLA students only</h3>
+            <p>Sign in with your UCLA Google account. Everyone in your chats is a verified UCLA student, not a bot.</p>
+          </article>
+          <article class="card">
+            <div class="icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4m5.62-4.02A11.96 11.96 0 0 1 12 2.94a11.96 11.96 0 0 1-8.62 3.04A12 12 0 0 0 3 9c0 5.59 3.82 10.29 9 11.62 5.18-1.33 9-6.03 9-11.62 0-1.04-.13-2.05-.38-3.02z"/></svg></div>
+            <h3>Safety built in</h3>
+            <p>Block anyone, report messages in two taps, and a moderation team that acts on reports within 24 hours.</p>
+          </article>
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14M5 8a2 2 0 1 1 0-4h14a2 2 0 1 1 0 4M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg></div>
+            <h3>Archive finished classes</h3>
+            <p>Quarter's over? Archive old class chats to keep your list clean without losing anything.</p>
+          </article>
+          <article class="card">
+            <div class="icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.35 15.35A9 9 0 0 1 8.65 3.65 9 9 0 1 0 20.35 15.35z"/></svg></div>
+            <h3>Light and dark mode</h3>
+            <p>Warm and easy on the eyes during the day, cozy for late-night problem sets.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how" aria-labelledby="how-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="how-title">Up and running in a minute</h2>
+          <p>Three steps between you and your classmates.</p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <h3>Sign in with UCLA</h3>
+            <p>Use your @g.ucla.edu Google account, the Google version of your @ucla.edu email. No new password to remember.</p>
+          </div>
+          <div class="step">
+            <h3>Add your classes</h3>
+            <p>Search by course, like "CS 35L" or "MATH 31B". BChat knows thousands of UCLA courses each quarter.</p>
+          </div>
+          <div class="step">
+            <h3>Start chatting</h3>
+            <p>You're in a group chat for every class. Ask about homework, find study partners, share notes.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screens -->
+    <section class="screens" aria-labelledby="screens-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="screens-title">A closer look</h2>
+          <p>Straight from the app.</p>
+        </div>
+        <div class="gallery">
+          <figure>
+            <div class="phone"><div class="screen"><img src="assets/screens/welcome.jpg" alt="BChat sign-in screen: Sign in with your UCLA Google account" loading="lazy" width="620" height="1348"></div></div>
+            <figcaption>Sign in<span>One tap with your UCLA account</span></figcaption>
+          </figure>
+          <figure>
+            <div class="phone"><div class="screen"><img src="assets/screens/rules.jpg" alt="BChat community rules: class chats are visible to classmates, zero tolerance for harassment, no exam answers, report anything" loading="lazy" width="620" height="1348"></div></div>
+            <figcaption>Community rules<span>Clear expectations from day one</span></figcaption>
+          </figure>
+          <figure>
+            <div class="phone"><div class="screen"><img src="assets/screens/settings.jpg" alt="BChat settings: appearance, notifications, and privacy and safety options" loading="lazy" width="620" height="1348"></div></div>
+            <figcaption>Your settings<span>Notifications, themes, blocking</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Safety -->
+    <section class="safety" id="safety" aria-labelledby="safety-title">
+      <div class="container safety-inner">
+        <div>
+          <h2 id="safety-title">A class chat you can actually trust</h2>
+          <p class="lead">BChat has zero tolerance for harassment, hate, and spam, and it's built so you never have to just put up with it.</p>
+          <ul class="checklist">
+            <li><span class="tick">✓</span><span><strong>Verified UCLA students only.</strong> Every account is a UCLA Google account.</span></li>
+            <li><span class="tick">✓</span><span><strong>Report and block in two taps.</strong> Tap someone's name or long-press any message.</span></li>
+            <li><span class="tick">✓</span><span><strong>Reports reviewed within 24 hours.</strong> Offenders are warned, muted, or banned.</span></li>
+            <li><span class="tick">✓</span><span><strong>No ads, no selling your data.</strong> Delete your account anytime from Settings.</span></li>
+          </ul>
+        </div>
+        <div class="convo" aria-hidden="true">
+          <p class="line them">Someone in my class chat is being weird 😬</p>
+          <p class="line us">Tap their name → Block. Then hit Report so the team can take a look.</p>
+          <p class="line them">Done. Way easier than Discord lol</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="features" id="faq" aria-labelledby="faq-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="faq-title">Questions, answered</h2>
+        </div>
+        <div class="faq">
+          <details>
+            <summary>Is BChat an official UCLA app?</summary>
+            <p>No. BChat is an independent project built by UCLA students. It isn't affiliated with, sponsored by, or endorsed by UCLA.</p>
+          </details>
+          <details>
+            <summary>Who can join?</summary>
+            <p>Current UCLA students, signing in with their @g.ucla.edu Google account (the Google version of your @ucla.edu email). If you're under 18, you need a parent or guardian's permission.</p>
+          </details>
+          <details>
+            <summary>Is it free?</summary>
+            <p>Yes. BChat is free, with no ads.</p>
+          </details>
+          <details>
+            <summary>What can other students see about me?</summary>
+            <p>Your display name, profile picture, and what you post in chats you're both in. Your email address, class year, and major aren't shown to other students. See the <a href="privacy.html">Privacy Policy</a> for details.</p>
+          </details>
+          <details>
+            <summary>How do I report someone or delete my account?</summary>
+            <p>Tap a person's name or long-press one of their messages to report or block them. To delete your account, go to Settings → Delete account.</p>
+          </details>
+          <details>
+            <summary>When can I download it?</summary>
+            <p>BChat is coming to the App Store soon. Email <a href="mailto:bchatdevx@gmail.com">bchatdevx@gmail.com</a> if you'd like to help test it early.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta" id="get" aria-labelledby="get-title">
+      <div class="container">
+        <div class="panel">
+          <img src="assets/logo.png" alt="BChat logo" width="96" height="104">
+          <h2 id="get-title">Your classmates are waiting</h2>
+          <p>BChat is coming soon to iPhone. Want early access? Get in touch.</p>
+          <a class="btn btn-primary" href="mailto:bchatdevx@gmail.com?subject=BChat%20early%20access">Request early access</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <a class="brand" href="./"><img src="assets/logo.png" alt="" width="38" height="41">BChat</a>
+        <ul class="footer-links">
+          <li><a href="privacy.html">Privacy Policy</a></li>
+          <li><a href="terms.html">Terms of Service</a></li>
+          <li><a href="mailto:bchatdevx@gmail.com">Contact</a></li>
+        </ul>
+      </div>
+      <p class="disclaimer">BChat is an independent student project. It is not affiliated with, sponsored by, or endorsed by the University of California, Los Angeles (UCLA) or the Regents of the University of California. © 2026 BChat.</p>
+    </div>
+  </footer>
+</body>
+</html>

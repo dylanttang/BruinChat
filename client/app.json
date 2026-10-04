@@ -32,7 +32,10 @@
         "foregroundImage": "./src/assets/adaptive-icon.png",
         "backgroundColor": "#FFF8F1"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./src/assets/favicon.png"
@@ -62,6 +65,13 @@
           "iosUrlScheme": "com.googleusercontent.apps.570423026036-ic6kv2r4pncr3fp025cmg9uemd96niqm"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9eec16f8-598a-4c9a-bd4a-ab50ed0e0668"
+      }
+    },
+    "owner": "bchatucal"
   }
 }

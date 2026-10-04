@@ -1,0 +1,23 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api-production-7bc9.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "570423026036-kbhbmrnc8bag2ph2p1311roqe853pqvn.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "570423026036-ic6kv2r4pncr3fp025cmg9uemd96niqm.apps.googleusercontent.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6818065865"
+      }
+    }
+  }
+}

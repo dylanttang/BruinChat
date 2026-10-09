@@ -235,7 +235,7 @@ All `/api/*` endpoints require auth via `devAuth` (Bearer JWT only) unless noted
 ### Courses
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/courses` | No | List all courses (optional `?term=`) |
+| `GET` | `/api/courses` | No | List the current quarter's courses (`CURRENT_TERM`, or `?term=`) |
 
 ### Users
 | Method | Path | Auth | Description |
@@ -314,7 +314,7 @@ Term codes use `YYQ` format: `26W` = Winter 2026, `26S` = Spring 2026, `26F` = F
 
 ### Update frequency
 
-Once per quarter. Run before the quarter begins.
+Once per quarter. Run before the quarter begins, then set `CURRENT_TERM` (in `server/.env`, and in Railway's Variables for production) to the new term so the course picker switches over. Old quarters stay in the database because existing class chats point at them.
 
 ### ⚠️ SOC bot protection
 

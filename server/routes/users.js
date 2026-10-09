@@ -8,6 +8,7 @@ import Feedback from '../../models/Feedback.js';
 import { devAuth } from '../middleware/devAuth.js';
 import { enrollmentRateLimit } from '../middleware/rateLimit.js';
 import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
+import { isReviewAccount } from '../utils/reviewLogin.js';
 import { deleteMediaAssets, messageMediaReferences } from '../utils/media.js';
 import { PROFILE_LIMITS, validString, validCloudinaryUrl } from '../utils/validation.js';
 
@@ -111,8 +112,10 @@ router.put('/me/courses', devAuth, enrollmentRateLimit, async (req, res) => {
     const added = newIds.filter((id) => !oldIds.includes(id));
     const removed = oldIds.filter((id) => !newIds.includes(id));
 
-    // For each added course: find or create the chat, add user to members
-    for (const courseId of added) {
+    // For each added course: find or create the chat, add user to members.
+    // The App Store review account keeps its courses but stays out of real
+    // class chats (it has its own demo chat).
+    for (const courseId of isReviewAccount(user) ? [] : added) {
       const course = courses.find((c) => c._id.toString() === courseId);
       const chatName = `${course.subjectArea.trim()} ${course.number} — ${course.title}`;
 

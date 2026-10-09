@@ -36,6 +36,34 @@ export async function signInWithGoogleIdToken(idToken: string) {
   return data;
 }
 
+// App Store review sign-in, shown only while the server has it turned on.
+export async function isReviewLoginEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/config`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.reviewLogin === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function signInForAppReview(email: string, password: string) {
+  const res = await fetch(`${API_URL}/api/auth/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Sign-in failed");
+  }
+
+  await setAuthToken(data.token);
+  return data;
+}
+
 // Attach the authenticated session to API requests.
 export async function apiFetch(
   path: string,

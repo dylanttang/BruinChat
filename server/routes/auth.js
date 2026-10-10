@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import User from '../../models/User.js';
 import { authRateLimit } from '../middleware/rateLimit.js';
+import { getReviewUser, reviewCredentialsMatch, reviewLoginConfig } from '../utils/reviewLogin.js';
 
 const router = Router();
 const googleClient = new OAuth2Client();
@@ -129,6 +130,31 @@ router.post('/google', authRateLimit, async (req, res) => {
   } catch (err) {
     console.error('POST /api/auth/google error:', err);
     res.status(401).json({ error: 'Google sign-in failed' });
+  }
+});
+
+// GET /api/auth/config: which sign-in options the welcome screen shows.
+router.get('/config', (req, res) => {
+  res.json({ reviewLogin: reviewLoginConfig().enabled });
+});
+
+// POST /api/auth/review: App Store review sign-in (see utils/reviewLogin.js).
+router.post('/review', authRateLimit, async (req, res) => {
+  try {
+    if (!reviewLoginConfig().enabled) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const { email, password } = req.body || {};
+    if (!reviewCredentialsMatch(email, password)) {
+      return res.status(401).json({ error: 'Incorrect email or password' });
+    }
+
+    const user = await getReviewUser();
+    if (user.bannedAt) return res.status(403).json({ error: 'Your account has been banned' });
+    res.json({ token: signAppToken(user), user: user.toObject() });
+  } catch (err) {
+    console.error('POST /api/auth/review error:', err);
+    res.status(500).json({ error: 'Sign-in failed' });
   }
 });
 

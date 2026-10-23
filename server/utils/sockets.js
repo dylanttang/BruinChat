@@ -51,11 +51,12 @@ export function configureSockets(io) {
     });
     socket.on('typing', async (data) => {
       if (!data || typeof data !== 'object') return;
-      const { chatId, isTyping } = data;
+      const { chatId, isTyping, threadId } = data;
+      if (threadId !== undefined && (typeof threadId !== 'string' || !/^[a-f0-9]{24}$/i.test(threadId))) return;
       if (typeof isTyping !== 'boolean' || !socket.rooms.has(chatId)) return;
       try {
         if (!(await isMember(chatId))) { await socket.leave(chatId); return; }
-        socket.to(chatId).emit('typing', { chatId, userId, isTyping });
+        socket.to(chatId).emit('typing', { chatId, userId, isTyping, ...(threadId ? { threadId } : {}) });
       } catch { socket.disconnect(true); }
     });
   });

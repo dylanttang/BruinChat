@@ -256,8 +256,18 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
 
     // Pagination
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
-    // Hide messages from anyone the viewer has blocked.
-    const query = { chatId, senderId: { $nin: req.user.blockedUsers || [] } };
+    const visibleSender = { $nin: req.user.blockedUsers || [] };
+    let root = null;
+    if (req.query.thread !== undefined) {
+      if (typeof req.query.thread !== 'string' || !mongoose.Types.ObjectId.isValid(req.query.thread)) {
+        return res.status(400).json({ error: 'Invalid thread ID' });
+      }
+      root = await populateMessage(Message.findOne({
+        _id: req.query.thread, chatId, threadRootId: null, senderId: visibleSender,
+      }), chatId).lean();
+      if (!root) return res.status(404).json({ error: 'Thread not found' });
+    }
+    const query = { chatId, threadRootId: root ? root._id : null, senderId: visibleSender };
 
     if (req.query.before) {
       if (!mongoose.Types.ObjectId.isValid(req.query.before)) {
@@ -268,7 +278,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
 
     // Fetch one extra to determine hasMore
     const messages = await Message.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ _id: -1 })
       .limit(limit + 1)
       .populate('senderId', '_id displayName avatarUrl')
       .populate('reactions.userId', '_id displayName')
@@ -278,7 +288,12 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
 
-    res.json({ messages: messages.map(serializeMessage), hasMore });
+    const counts = !root && messages.length ? await Message.aggregate([
+      { $match: { chatId: new mongoose.Types.ObjectId(chatId), threadRootId: { $in: messages.map(m => m._id) }, senderId: visibleSender } },
+      { $group: { _id: '$threadRootId', count: { $sum: 1 } } },
+    ]) : [];
+    const countById = new Map(counts.map(c => [String(c._id), c.count]));
+    res.json({ messages: messages.map(m => ({ ...serializeMessage(m), replyCount: countById.get(String(m._id)) || 0 })), root: serializeMessage(root), hasMore });
   } catch (err) {
     console.error('GET /api/chats/:id/messages error:', err);
     res.status(500).json({ error: 'Failed to fetch messages' });
@@ -320,12 +335,16 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
     }
 
     // Validate body
-    const { text, mediaUrl, mediaUrls, mediaTypes, replyTo } = req.body;
+    const { text, mediaUrl, mediaUrls, mediaTypes, replyTo, threadRootId } = req.body;
     const bodyError = validateMessage(req.body, req.user._id);
     if (bodyError) return res.status(400).json({ error: bodyError });
     if (replyTo && !(await Message.exists({ _id: replyTo, chatId, deletedAt: null }))) {
       return res.status(400).json({ error: 'Reply must reference a message in this chat' });
     }
+    if (threadRootId && !(await Message.exists({
+      _id: threadRootId, chatId, deletedAt: null, threadRootId: null,
+      senderId: { $nin: req.user.blockedUsers || [] },
+    }))) return res.status(400).json({ error: 'Thread must reference a visible top-level message in this chat' });
     const cleanedMediaUrls = Array.isArray(mediaUrls)
       ? mediaUrls.filter((url) => typeof url === 'string' && url.trim()).map((url) => url.trim())
       : [];
@@ -346,6 +365,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
       mediaUrl: mediaUrl?.trim() || cleanedMediaUrls[0] || '',
       mediaUrls: cleanedMediaUrls,
       mediaTypes: cleanedMediaTypes.slice(0, cleanedMediaUrls.length),
+      ...(threadRootId ? { threadRootId } : {}),
       ...(replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? { replyTo } : {}),
     });
 
@@ -357,6 +377,9 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
 
     if (req.io) {
       req.io.to(chatId).emit('newMessage', serializeMessage(populated));
+      if (threadRootId) req.io.to(chatId).emit('threadUpdated', {
+        rootId: threadRootId, senderId: String(req.user._id),
+      });
     }
 
     // Fan out push notifications to members with tokens, excluding sender
@@ -371,7 +394,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
     }).select('pushToken classNotif replyNotif _id').lean();
 
     if (recipients.length > 0) {
-      const isReply = !!populated.replyTo;
+      const isReply = !!(populated.replyTo || populated.threadRootId);
       const isClassChat = !!chat.course;
 
       const eligibleTokens = recipients
@@ -387,7 +410,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
         sendPush(eligibleTokens, {
           title: senderName,
           body: populated.text || '📎 Media',
-          data: { chatId },
+          data: { chatId, ...(threadRootId ? { threadId: threadRootId } : {}) },
         });
       }
     }

@@ -36,21 +36,31 @@ Living reference for how the backend works: tech stack, auth, data models, API e
 
 ## Authentication
 
-**Approach:** Google OAuth 2.0 ID token flow, restricted to `@ucla.edu` and `@g.ucla.edu` emails.
+**Approach:** Google OAuth 2.0 ID token flow, restricted to UCLA-managed `@g.ucla.edu` accounts. Students' `@ucla.edu` addresses are aliases of their `@g.ucla.edu` account, and signing in to it goes through UCLA Logon + Duo.
+
+The Google Cloud project is `bchat-510121`, owned by `bchatdevx@gmail.com`. It has Web and iOS OAuth clients, basic scopes only (`openid`, `email`, `profile`), and its consent screen is published. No Android client yet.
 
 ### Flow
 
 1. User taps **Sign in with Google** on `welcome/welcome.tsx`
-2. `expo-auth-session/providers/google` opens the native Google sign-in
-3. Google returns an **ID token** to the client (not an access token — we don't need Google APIs)
+2. **iOS/Android:** `@react-native-google-signin/google-signin` shows Google's native sign-in (`client/lib/googleNativeSignIn.ts`). **Web:** `expo-auth-session` opens a popup. Both limit the account picker to `g.ucla.edu`. The native module needs a development build, so it doesn't work in Expo Go.
+3. Google returns an **ID token** to the client (not an access token; we don't call Google APIs). The native SDK's token is issued for the **web** client ID.
 4. Client `POST /api/auth/google` with `{ idToken }`
 5. Server (`routes/auth.js`):
    - Verifies the ID token via `google-auth-library` against our web/iOS/Android client IDs
    - Confirms `email_verified` is true
-   - Checks the email matches `/^[a-zA-Z0-9._%+-]+@(g\.)?ucla\.edu$/`
-   - Upserts a User document (matched by `googleId`, `email`, or `username`)
-   - Returns `{ token, user }` where `token` is an HS256 JWT with `sub` = user ID, `role` = user role, 7-day expiry
-6. Client stores the JWT in Expo SecureStore on native devices (memory only on web) and sends it as `Authorization: Bearer <token>` on every subsequent request
+   - Requires the signed `hd` claim to be `g.ucla.edu` and the email to end in `@g.ucla.edu`. Google only sets `hd` for Workspace accounts, so personal Google accounts made with a UCLA address are refused.
+   - Finds the user by `googleId` or `email` (never by username) or creates one. It rejects a `googleId` mismatch and deleted or banned accounts.
+   - Returns `{ token, user }`, where `token` is an HS256 JWT with `sub` = user ID, `role` = user role, and a 30-day expiry (`JWT_EXPIRES_IN`)
+6. Client stores the JWT in Expo SecureStore on native devices (memory only on web) and sends it as `Authorization: Bearer <token>` on every subsequent request. On launch, `client/lib/session.ts` restores a saved session and sends the user to Terms, the questionnaire, or Home.
+
+### App Review sign-in (`server/utils/reviewLogin.js`)
+
+Apple's reviewers can't use a UCLA account, so there's a separate email/password sign-in for one review account:
+- **Switch:** it works only while `REVIEW_LOGIN_ENABLED=true` and `REVIEW_LOGIN_EMAIL`/`REVIEW_LOGIN_PASSWORD` are set.
+- **App:** `GET /api/auth/config` tells the app whether to show the "App Review sign in" link. `POST /api/auth/review` checks the credentials in constant time and is rate-limited.
+- **Isolation:** the review account gets its own demo chat with made-up classmates, and adding courses never joins it to real class chats.
+- **Turning it off:** setting `REVIEW_LOGIN_ENABLED=false` also invalidates its existing tokens. Turn it off with that flag, not by deleting `REVIEW_LOGIN_EMAIL`; the email is how the server recognizes the review account.
 
 ### Middleware contract (`server/middleware/devAuth.js`)
 
@@ -151,7 +161,7 @@ All models live in `/models/`.
 
 ## Real-Time Messaging
 
-Socket.io is mounted on the same HTTP server. CORS is currently `*` (locked down before production).
+Socket.io is mounted on the same HTTP server. Browser origins are limited by `CORS_ORIGINS`, and native apps (which send no Origin header) still need a valid JWT.
 
 ### Client → Server events
 - `joinChat(chatId)` — subscribe to a chat's room
@@ -259,7 +269,7 @@ All `/api/*` endpoints require auth via `devAuth` (Bearer JWT only) unless noted
 | `POST` | `/api/chats/:id/messages` | Yes | Send a message |
 | `PUT` | `/api/chats/:chatId/messages/:id` | Yes | Edit a message (sender only) |
 | `DELETE` | `/api/chats/:chatId/messages/:id` | Yes | Soft-delete a message (sender only) |
-| `POST` | `/api/chats/:chatId/messages/:id/react` | Yes | Toggle emoji reaction |
+| `POST` | `/api/chats/:chatId/messages/:id/react` | Yes | React with an emoji. One reaction per person: the same emoji removes yours, a different one replaces it. |
 | `DELETE` | `/api/chats/:id/members/me` | Yes | Leave a chat |
 
 ### Reports
@@ -331,27 +341,35 @@ See `server/.env.example` and `client/.env.example` for the canonical list. Brie
 - `MONGODB_URI` (required), `MONGODB_DB` (optional — overrides the DB name from the URI)
 - `CORS_ORIGINS` (exact browser origin allowlist; empty denies all browser origins)
 - `JWT_SECRET` (random, at least 32 characters), `JWT_EXPIRES_IN` (default `30d`)
-- `GOOGLE_WEB_CLIENT_ID` (required), `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID` (at least one required)
+- `GOOGLE_WEB_CLIENT_ID` (required; the native iOS sign-in also produces tokens for this ID), `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID` (optional)
+- `CURRENT_TERM` (the quarter `/api/courses` returns by default, e.g. `26F`)
+- `REVIEW_LOGIN_ENABLED`, `REVIEW_LOGIN_EMAIL`, `REVIEW_LOGIN_PASSWORD` (App Review sign-in; off unless `REVIEW_LOGIN_ENABLED=true`)
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (all required for uploads to work)
 - `SERVER_PUBLIC_URL` (optional — only used in server startup logs for mobile testing)
 - `RATE_LIMIT_SHADOW` (optional — set to `true` to log rate-limit blocks without actually 429-ing anyone)
 
 **Client**
 - `EXPO_PUBLIC_API_URL`
-- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
+- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (required), `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` (required for iPhone builds), `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` (not used yet)
+
+Production values for the iOS build are set in `client/eas.json`, and for the API in Railway's Variables tab.
 
 ---
 
 ## Known Gaps & Pending Work
 
-Things deliberately not built yet, in roughly priority order:
+Things not built yet, in roughly priority order:
 
-- **Structured logging + error tracking** — Sentry or similar. Currently using `console.error` only.
-- **Account deletion / data export** — no endpoint to delete a user account or export their data.
-- **Soft-delete cleanup job** — deleted messages and abandoned course chats accumulate indefinitely.
-- **Redis-backed rate limiter** — in-memory works for one server; need Redis for horizontal scaling.
-- **Admin panel UI** — `/api/admin/*` endpoints exist but there's no UI to call them. Admins moderate via direct API calls.
-- **Tests / CI** — none yet.
+- **Separate production database:** production currently uses the same MongoDB database and credentials as local development. It needs its own database and database user.
+- **Archive UI:** the archive endpoints exist (`PUT /api/chats/:id/archive`, `GET /api/chats/archived`), but the app has no archive button and the Archived screen still shows placeholder data.
+- **Leave chat button:** `DELETE /api/chats/:id/members/me` exists, but nothing in the app calls it.
+- **Structured logging + error tracking:** Sentry or similar. Currently `console.error` only.
+- **Data export:** no endpoint for a user to download their data. (Account deletion exists: `DELETE /api/users/me`.)
+- **Soft-delete cleanup job:** deleted messages and abandoned course chats accumulate indefinitely.
+- **Redis-backed rate limiter:** in-memory works for one server; Redis is needed to scale to several.
+- **Android:** no Android OAuth client. The free Google Sign-In module uses Google's deprecated Android SDK, so switch to Credential Manager (or the paid Universal Sign In module) before shipping Android.
+
+Done since earlier versions of this list: account deletion, the in-app Admin tab, and tests with CI (GitHub Actions runs `server` tests and the `client` type check on every PR).
 
 ---
 

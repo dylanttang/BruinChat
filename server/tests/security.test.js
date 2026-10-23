@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import User from '../../models/User.js';
 import Chat from '../../models/Chat.js';
 import Message from '../../models/Message.js';
-import { devAuth } from '../middleware/devAuth.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { configureSockets } from '../utils/sockets.js';
 import { createOriginPolicy } from '../utils/cors.js';
 import { validateMessage } from '../utils/validation.js';
@@ -22,7 +22,7 @@ const sign = (claims = {}, options = {}) => jwt.sign({ sub: userId, ...claims },
 async function auth(headers) {
   let status, accepted = false;
   const req = { headers };
-  await devAuth(req, { status(code) { status = code; return this; }, json() {} }, () => { accepted = true; });
+  await requireAuth(req, { set() {}, status(code) { status = code; return this; }, json() {} }, () => { accepted = true; });
   return { status, accepted, req };
 }
 test('HTTP rejects missing, forged, expired and wrong-algorithm credentials including x-user-id', async () => {

@@ -1,11 +1,12 @@
+import { serializeChat, serializeMessage } from '../utils/serializers.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import path from 'path';
 import Chat from '../../models/Chat.js';
 import Message from '../../models/Message.js';
 import User from '../../models/User.js';
-import { devAuth } from '../middleware/devAuth.js';
-import { deleteMediaAssets, messageMediaReferences, serializeMedia } from '../utils/media.js';
+import { requireAuth } from '../middleware/requireAuth.js';
+import { deleteMediaAssets, messageMediaReferences } from '../utils/media.js';
 import { validateMessage, validateText } from '../utils/validation.js';
 import { sendPush } from '../utils/push.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
@@ -56,7 +57,7 @@ function inferMediaKindFromUrl(url) {
 //
 // Response: { chats: [...], hasMore: boolean, nextCursor: string | null }
 // ---------------------------------------------------------------------------
-router.get('/', devAuth, async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const limit = parseLimit(req.query.limit, CHAT_LIST_DEFAULT_LIMIT, CHAT_LIST_MAX_LIMIT);
     const query = { members: req.user._id, archivedBy: { $ne: req.user._id } };
@@ -126,7 +127,7 @@ router.get('/', devAuth, async (req, res) => {
     }));
 
     res.json({
-      chats: enriched,
+      chats: enriched.map(serializeChat),
       hasMore,
       nextCursor: hasMore && enriched.length > 0
         ? enriched[enriched.length - 1]._id.toString()
@@ -141,7 +142,7 @@ router.get('/', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // GET /api/chats/archived — List chats archived by the current user
 // ---------------------------------------------------------------------------
-router.get('/archived', devAuth, async (req, res) => {
+router.get('/archived', requireAuth, async (req, res) => {
   try {
     const chats = await Chat.find({
       members: req.user._id,
@@ -151,7 +152,7 @@ router.get('/archived', devAuth, async (req, res) => {
       .populate('members', '_id displayName avatarUrl')
       .lean();
 
-    return res.json(chats);
+    return res.json(chats.map(serializeChat));
   } catch (err) {
     console.error('GET /api/chats/archived error:', err);
     return res.status(500).json({ error: 'Failed to fetch archived chats' });
@@ -162,7 +163,7 @@ router.get('/archived', devAuth, async (req, res) => {
 // PUT /api/chats/:id/archive — Toggle archive status for current user
 // Body: { archive: true | false }
 // ---------------------------------------------------------------------------
-router.put('/:id/archive', devAuth, async (req, res) => {
+router.put('/:id/archive', requireAuth, async (req, res) => {
   try {
     const { archive } = req.body;
 
@@ -182,7 +183,7 @@ router.put('/:id/archive', devAuth, async (req, res) => {
       : { $pull: { archivedBy: req.user._id } };
 
     const updated = await Chat.findByIdAndUpdate(req.params.id, update, { new: true }).lean();
-    return res.json(updated);
+    return res.json(serializeChat(updated));
   } catch (err) {
     console.error('PUT /api/chats/:id/archive error:', err);
     return res.status(500).json({ error: 'Failed to update archive status' });
@@ -192,7 +193,7 @@ router.put('/:id/archive', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // GET /api/chats/:id — Get a single chat (populated members and course)
 // ---------------------------------------------------------------------------
-router.get('/:id', devAuth, async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
     const chatId = req.params.id;
 
@@ -214,7 +215,7 @@ router.get('/:id', devAuth, async (req, res) => {
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
-    res.json({ chat });
+    res.json({ chat: serializeChat(chat) });
   } catch (err) {
     console.error('GET /api/chats/:id error:', err);
     res.status(500).json({ error: 'Failed to fetch chat' });
@@ -230,7 +231,7 @@ router.get('/:id', devAuth, async (req, res) => {
 //
 // Response: { messages: [...], hasMore: boolean }
 // ---------------------------------------------------------------------------
-router.get('/:id/messages', devAuth, async (req, res) => {
+router.get('/:id/messages', requireAuth, async (req, res) => {
   try {
     const chatId = req.params.id;
 
@@ -277,7 +278,7 @@ router.get('/:id/messages', devAuth, async (req, res) => {
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
 
-    res.json({ messages, hasMore });
+    res.json({ messages: messages.map(serializeMessage), hasMore });
   } catch (err) {
     console.error('GET /api/chats/:id/messages error:', err);
     res.status(500).json({ error: 'Failed to fetch messages' });
@@ -292,7 +293,7 @@ router.get('/:id/messages', devAuth, async (req, res) => {
 //
 // Response: 201 { message: {...} }
 // ---------------------------------------------------------------------------
-router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => {
+router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res) => {
   try {
     const blocked = postingBlock(req.user);
     if (blocked) return res.status(blocked.status).json(blocked.body);
@@ -355,7 +356,7 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
     const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('newMessage', serializeMedia(populated));
+      req.io.to(chatId).emit('newMessage', serializeMessage(populated));
     }
 
     // Fan out push notifications to members with tokens, excluding sender
@@ -391,7 +392,7 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
       }
     }
 
-    res.status(201).json({ message: populated });
+    res.status(201).json({ message: serializeMessage(populated) });
   } catch (err) {
     console.error('POST /api/chats/:id/messages error:', err);
     res.status(500).json({ error: 'Failed to send message' });
@@ -405,7 +406,7 @@ router.post('/:id/messages', devAuth, messageSendRateLimit, async (req, res) => 
 //
 // Response: { message: {...} }
 // ---------------------------------------------------------------------------
-router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (req, res) => {
+router.post('/:chatId/messages/:id/react', requireAuth, reactionRateLimit, async (req, res) => {
   try {
     const blocked = postingBlock(req.user);
     if (blocked) return res.status(blocked.status).json(blocked.body);
@@ -466,10 +467,10 @@ router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (re
     const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('messageReacted', serializeMedia(populated));
+      req.io.to(chatId).emit('messageReacted', serializeMessage(populated));
     }
 
-    res.json({ message: populated });
+    res.json({ message: serializeMessage(populated) });
   } catch (err) {
     console.error('POST /api/chats/:chatId/messages/:id/react error:', err);
     res.status(500).json({ error: 'Failed to react to message' });
@@ -479,7 +480,7 @@ router.post('/:chatId/messages/:id/react', devAuth, reactionRateLimit, async (re
 // ---------------------------------------------------------------------------
 // DELETE /api/chats/:id/members/me — Leave a chat
 // ---------------------------------------------------------------------------
-router.delete('/:id/members/me', devAuth, async (req, res) => {
+router.delete('/:id/members/me', requireAuth, async (req, res) => {
   try {
     const chatId = req.params.id;
 
@@ -522,7 +523,7 @@ router.delete('/:id/members/me', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // PUT /api/chats/:chatId/messages/:id — Edit a message
 // ---------------------------------------------------------------------------
-router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
+router.put('/:chatId/messages/:id', requireAuth, async (req, res) => {
   try {
     const blocked = postingBlock(req.user);
     if (blocked) return res.status(blocked.status).json(blocked.body);
@@ -559,10 +560,10 @@ router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
     const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('messageEdited', serializeMedia(populated));
+      req.io.to(chatId).emit('messageEdited', serializeMessage(populated));
     }
 
-    res.json({ message: populated });
+    res.json({ message: serializeMessage(populated) });
   } catch (err) {
     console.error('PUT /api/chats/:chatId/messages/:id error:', err);
     res.status(500).json({ error: 'Failed to edit message' });
@@ -572,7 +573,7 @@ router.put('/:chatId/messages/:id', devAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // DELETE /api/chats/:chatId/messages/:id — Delete a message
 // ---------------------------------------------------------------------------
-router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
+router.delete('/:chatId/messages/:id', requireAuth, async (req, res) => {
   try {
     const { chatId, id: messageId } = req.params;
 
@@ -605,10 +606,10 @@ router.delete('/:chatId/messages/:id', devAuth, async (req, res) => {
     const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 
     if (req.io) {
-      req.io.to(chatId).emit('messageDeleted', serializeMedia(populated));
+      req.io.to(chatId).emit('messageDeleted', serializeMessage(populated));
     }
 
-    res.json({ message: populated });
+    res.json({ message: serializeMessage(populated) });
   } catch (err) {
     console.error('DELETE /api/chats/:chatId/messages/:id error:', err);
     res.status(500).json({ error: 'Failed to delete message' });

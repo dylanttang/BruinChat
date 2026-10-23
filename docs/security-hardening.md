@@ -47,3 +47,10 @@ Normal `npm install` / `npm ci` runs these patches via postinstall. If using `--
 Live Google sign-in, native Keychain/Keystore persistence and Cloudinary upload/preset behavior still require a configured development build and service credentials.
 
 Validated locally: 11 server security tests, client security scripts, TypeScript, clean installs with patches, and Expo web/iOS/Android JavaScript exports. Both npm audits reported zero vulnerabilities. The export still warns about the pre-existing `web.favicon` path; native device builds were not performed.
+
+
+## Explicit response serialization and HTTP tests
+
+Authenticated routes now serialize chat, message, and user media explicitly after authorization, including socket payloads. The global `res.json` override is removed to avoid signing the same asset twice. `createApp` exposes the production middleware and routes without starting a database connection, enabling mounted HTTP regression tests with mocked external services. Existing moderation, review login, deletion, CORS, and deployment behavior is preserved.
+
+Client storage, API authentication, and socket lifecycle checks run with `npm test`; `npm run test:security` also checks dependency compatibility. Live device sign-in and media flows still require configured service credentials.

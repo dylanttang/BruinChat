@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import Feedback from '../../models/Feedback.js';
-import { devAuth } from '../middleware/devAuth.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { feedbackRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 
 // POST /api/feedback
-router.post('/', devAuth, feedbackRateLimit, async (req, res) => {
+router.post('/', requireAuth, feedbackRateLimit, async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || typeof text !== 'string' || !text.trim()) {

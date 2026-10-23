@@ -6,6 +6,17 @@ const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 
 async function main() {
+  // This deletes EVERY user, chat and message. Only allow it on a database
+  // whose name marks it as dev/test, and only when --wipe is passed.
+  const dbName = process.env.MONGODB_DB || '';
+  if (!process.argv.includes('--wipe') || !/dev|test/i.test(dbName)) {
+    console.error(
+      `Refusing to seed: this deletes ALL users, chats and messages in "${dbName || '(the database in MONGODB_URI)'}".\n` +
+      'Only run it against a development database: set MONGODB_DB to a name containing "dev" or "test" and pass --wipe.'
+    );
+    process.exit(1);
+  }
+
   const conn = await connectDB();
 
   console.log('Seeding database...');

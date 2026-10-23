@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const chatSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    directKey: { type: String },
     isGroup: { type: Boolean, default: true },
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }],
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -13,6 +14,7 @@ const chatSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+chatSchema.index({ directKey: 1 }, { unique: true, partialFilterExpression: { directKey: { $type: 'string' } } });
 chatSchema.index({ members: 1 });
 chatSchema.index({ lastMessageAt: -1, _id: -1 });
 // Partial unique index: enforces one chat per course, but allows chats

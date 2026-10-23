@@ -1,8 +1,9 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Image, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { startDirectMessage, conversationTitle } from "../../../lib/directMessages";
 import UserProfileSheet, { ProfileUser } from "../../../components/UserProfileSheet";
 import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
 
@@ -22,6 +23,7 @@ type Course = {
 type Chat = {
   _id: string;
   name: string;
+  isGroup?: boolean;
   members: Member[];
   course: Course | null;
 };
@@ -84,7 +86,7 @@ export default function ChatInfo() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>{chat.name}</Text>
+        <Text style={styles.title} numberOfLines={1}>{conversationTitle(chat, currentUserId)}</Text>
         <View style={{ width: 32 }} />
       </View>
 
@@ -136,12 +138,25 @@ export default function ChatInfo() {
         </View>
 
         {/* Leave Button */}
-        <TouchableOpacity style={styles.leaveButton}>
-          <Text style={styles.leaveText}>Leave</Text>
+        <TouchableOpacity style={styles.leaveButton} onPress={chat.isGroup === false ? async () => {
+          try {
+            const response = await apiFetch(`/api/chats/${id}/archive`, { method: "PUT", body: JSON.stringify({ archive: true }) });
+            if (!response.ok) throw new Error("Could not archive conversation");
+            router.replace("/direct");
+          } catch { Alert.alert("Could not archive conversation", "Please try again."); }
+        } : undefined}>
+          <Text style={styles.leaveText}>{chat.isGroup === false ? "Archive conversation" : "Leave"}</Text>
         </TouchableOpacity>
       </ScrollView>
 
       <UserProfileSheet
+        onMessage={profileUser && profileUser._id !== currentUserId ? async () => {
+          try {
+            const chatId = await startDirectMessage({ recipientId: profileUser._id });
+            setProfileUser(null);
+            router.push(`/chat/${chatId}`);
+          } catch (error) { Alert.alert("Could not start message", error instanceof Error ? error.message : "Please try again"); }
+        } : undefined}
         user={profileUser}
         isBlocked={!!profileUser && blockedIds.has(profileUser._id)}
         onClose={() => setProfileUser(null)}

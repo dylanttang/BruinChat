@@ -15,12 +15,13 @@ type Props = {
   user: ProfileUser | null;
   isBlocked: boolean;
   onClose: () => void;
+  onMessage?: () => void;
   onBlockedChange: (userId: string, blocked: boolean) => void;
 };
 
 // Bottom sheet shown when you tap someone's name or picture: who they are,
 // plus Block/Unblock and Report.
-export default function UserProfileSheet({ user, isBlocked, onClose, onBlockedChange }: Props) {
+export default function UserProfileSheet({ user, isBlocked, onClose, onBlockedChange, onMessage }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
@@ -82,6 +83,10 @@ export default function UserProfileSheet({ user, isBlocked, onClose, onBlockedCh
               {isBlocked && <Text style={styles.blockedTag}>Blocked</Text>}
 
               <View style={styles.actions}>
+                {onMessage && !isBlocked && <TouchableOpacity style={styles.action} onPress={onMessage} disabled={busy} accessibilityRole="button" accessibilityLabel={`Message ${user.displayName}`}>
+                  <Ionicons name="chatbubble-outline" size={22} color={colors.primary} />
+                  <Text style={[styles.actionText, { color: colors.primary }]}>Message</Text>
+                </TouchableOpacity>}
                 <TouchableOpacity style={styles.action} onPress={toggleBlock} disabled={busy}>
                   <Ionicons
                     name={isBlocked ? "checkmark-circle-outline" : "ban-outline"}

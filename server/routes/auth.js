@@ -1,3 +1,4 @@
+import { serializeUser } from '../utils/serializers.js';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
@@ -125,8 +126,8 @@ router.post('/google', authRateLimit, async (req, res) => {
     await user.save();
 
     const token = signAppToken(user);
-    req.user = user;
-    res.json({ token, user: user.toObject() });
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ token, user: serializeUser(user) });
   } catch (err) {
     console.error('POST /api/auth/google error:', err);
     res.status(401).json({ error: 'Google sign-in failed' });
@@ -151,7 +152,8 @@ router.post('/review', authRateLimit, async (req, res) => {
 
     const user = await getReviewUser();
     if (user.bannedAt) return res.status(403).json({ error: 'Your account has been banned' });
-    res.json({ token: signAppToken(user), user: user.toObject() });
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ token: signAppToken(user), user: serializeUser(user) });
   } catch (err) {
     console.error('POST /api/auth/review error:', err);
     res.status(500).json({ error: 'Sign-in failed' });

@@ -8,6 +8,7 @@ const messageSchema = new mongoose.Schema(
     mediaUrl: { type: String, maxlength: 2048, default: '' },
     mediaUrls: [{ type: String, maxlength: 2048 }],
     mediaTypes: [{ type: String, enum: ['image', 'video'] }],
+    threadRootId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     reactions: [
       {
@@ -22,6 +23,7 @@ const messageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+messageSchema.index({ chatId: 1, threadRootId: 1, _id: -1 });
 messageSchema.index({ chatId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Message', messageSchema);

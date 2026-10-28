@@ -13,12 +13,13 @@ const userId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const chatId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const sign = () => jwt.sign({ sub: userId }, process.env.JWT_SECRET, { expiresIn: '1h' });
 test('HTTP message delivery signs nested media only after membership authorization', async () => {
-  const originalChat = Chat.findById, originalMessages = Message.find;
+  const originalChat = Chat.findById, originalMessages = Message.find, originalAggregate = Message.aggregate;
   const asset = `https://res.cloudinary.com/test-cloud/image/authenticated/messages/${userId}/photo.jpg`;
   const stored = { chatId, mediaUrl: asset, mediaUrls: [asset], senderId: { displayName: 'Student', avatarUrl: asset }, replyTo: { chatId, mediaUrl: asset } };
   let member = false, reads = 0;
   User.findById = () => ({ lean: async () => ({ _id: userId }) });
   Chat.findById = () => ({ lean: async () => ({ members: member ? [userId] : [] }) });
+  Message.aggregate = async () => [];
   Message.find = () => {
     reads++;
     const query = { sort: () => query, limit: () => query, populate: () => query, lean: async () => [stored] };
@@ -38,6 +39,6 @@ test('HTTP message delivery signs nested media only after membership authorizati
     }
     assert.equal(stored.mediaUrl, asset);
     assert.equal(stored.senderId.avatarUrl, asset);
-  } finally { Chat.findById = originalChat; Message.find = originalMessages; }
+  } finally { Chat.findById = originalChat; Message.find = originalMessages; Message.aggregate = originalAggregate; }
 });
 

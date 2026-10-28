@@ -33,6 +33,8 @@ type Props = {
     reactions?: { emoji: string; count: number; reactedByMe: boolean; names: string[] }[];
   };
   onLongPress?: () => void;
+  replyCount?: number;
+  onOpenThread?: () => void;
   onReact?: (emoji: string) => void;
   // Tapping the sender's picture or name opens their profile sheet.
   onPressUser?: () => void;
@@ -89,7 +91,7 @@ function VideoThumbnailTile({ uri, style }: { uri: string; style: any }) {
   );
 }
 
-export default function MessageBubble({ item, onLongPress, onReact, onPressUser }: Props) {
+export default function MessageBubble({ item, onLongPress, onReact, onPressUser, onOpenThread, replyCount = 0 }: Props) {
   const isMe = item.mine;
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -250,6 +252,10 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser 
               </Text>
             )}
           </LinearGradient>
+
+          {onOpenThread && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reply in thread" onPress={onOpenThread} style={{ paddingVertical: 8 }}>
+            <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>{replyCount ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}` : "Reply in thread"}</Text>
+          </TouchableOpacity>}
 
           {/* Heart that pops over the bubble on double-tap. */}
           <Animated.View

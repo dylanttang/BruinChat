@@ -23,6 +23,15 @@ const mediaLabelByType = {
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']);
 const videoExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm']);
 
+async function directRecipientAvailable(chat, user) {
+  if (chat.isGroup !== false) return true;
+  const recipientId = chat.members.find(id => String(id) !== String(user._id));
+  if (!recipientId || (user.blockedUsers || []).some(id => String(id) === String(recipientId))) return false;
+  return Boolean(await User.exists({
+    _id: recipientId, bannedAt: null, deletedAt: null, blockedUsers: { $ne: user._id },
+  }));
+}
+
 function parseLimit(value, defaultLimit, maxLimit) {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return defaultLimit;
@@ -61,6 +70,9 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const limit = parseLimit(req.query.limit, CHAT_LIST_DEFAULT_LIMIT, CHAT_LIST_MAX_LIMIT);
     const query = { members: req.user._id, archivedBy: { $ne: req.user._id } };
+    if (req.query.kind === 'direct') query.isGroup = false;
+    else if (req.query.kind === 'group') query.isGroup = { $ne: false };
+    else if (req.query.kind) return res.status(400).json({ error: 'Invalid chat kind' });
 
     if (req.query.before) {
       if (!mongoose.Types.ObjectId.isValid(req.query.before)) {
@@ -68,6 +80,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
 
       const cursorChat = await Chat.findOne({
+        ...(query.isGroup !== undefined ? { isGroup: query.isGroup } : {}),
         _id: req.query.before,
         members: req.user._id,
         archivedBy: { $ne: req.user._id },
@@ -136,6 +149,47 @@ router.get('/', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('GET /api/chats error:', err);
     res.status(500).json({ error: 'Failed to fetch chats' });
+  }
+});
+
+// Find or create a private two-person conversation. The unique pair key makes
+// repeated requests (including simultaneous requests from both users) idempotent.
+router.post('/direct', requireAuth, messageSendRateLimit, async (req, res) => {
+  try {
+    const blocked = postingBlock(req.user);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
+    const username = typeof req.body.username === 'string' ? req.body.username.trim().toLowerCase() : '';
+    const recipientId = req.body.recipientId;
+    if (recipientId !== undefined ? typeof recipientId !== 'string' || !mongoose.Types.ObjectId.isValid(recipientId) : !username || username.length > 64) {
+      return res.status(400).json({ error: 'Choose a classmate or enter a valid username' });
+    }
+    const recipient = await User.findOne({
+      ...(recipientId ? { _id: recipientId } : { username }), bannedAt: null, deletedAt: null,
+      blockedUsers: { $ne: req.user._id },
+    }).select('_id displayName').lean();
+    if (!recipient || (req.user.blockedUsers || []).some(id => String(id) === String(recipient._id))) {
+      return res.status(404).json({ error: 'This conversation is unavailable' });
+    }
+    if (String(recipient._id) === String(req.user._id)) return res.status(400).json({ error: 'Choose another user' });
+    const members = [String(req.user._id), String(recipient._id)].sort();
+    const directKey = members.join(':');
+    // Reuse conversations created before directKey was introduced.
+    let chat = await Chat.findOne({ isGroup: false, members: { $all: members, $size: 2 } }).lean();
+    if (!chat) {
+      try {
+        chat = await Chat.findOneAndUpdate({ directKey }, { $setOnInsert: {
+          directKey, members, isGroup: false, name: 'Direct message', createdBy: req.user._id,
+        } }, { upsert: true, new: true, runValidators: true }).lean();
+      } catch (error) {
+        if (error.code !== 11000) throw error;
+        chat = await Chat.findOne({ directKey }).lean();
+      }
+    }
+    await Chat.findByIdAndUpdate(chat._id, { $pull: { archivedBy: req.user._id } });
+    res.json({ chat: serializeChat(chat) });
+  } catch (error) {
+    console.error('POST /api/chats/direct error:', error);
+    res.status(500).json({ error: 'Failed to start direct message' });
   }
 });
 
@@ -256,8 +310,18 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
 
     // Pagination
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
-    // Hide messages from anyone the viewer has blocked.
-    const query = { chatId, senderId: { $nin: req.user.blockedUsers || [] } };
+    const visibleSender = { $nin: req.user.blockedUsers || [] };
+    let root = null;
+    if (req.query.thread !== undefined) {
+      if (typeof req.query.thread !== 'string' || !mongoose.Types.ObjectId.isValid(req.query.thread)) {
+        return res.status(400).json({ error: 'Invalid thread ID' });
+      }
+      root = await populateMessage(Message.findOne({
+        _id: req.query.thread, chatId, threadRootId: null, senderId: visibleSender,
+      }), chatId).lean();
+      if (!root) return res.status(404).json({ error: 'Thread not found' });
+    }
+    const query = { chatId, threadRootId: root ? root._id : null, senderId: visibleSender };
 
     if (req.query.before) {
       if (!mongoose.Types.ObjectId.isValid(req.query.before)) {
@@ -268,7 +332,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
 
     // Fetch one extra to determine hasMore
     const messages = await Message.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ _id: -1 })
       .limit(limit + 1)
       .populate('senderId', '_id displayName avatarUrl')
       .populate('reactions.userId', '_id displayName')
@@ -278,7 +342,12 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
 
-    res.json({ messages: messages.map(serializeMessage), hasMore });
+    const counts = !root && messages.length ? await Message.aggregate([
+      { $match: { chatId: new mongoose.Types.ObjectId(chatId), threadRootId: { $in: messages.map(m => m._id) }, senderId: visibleSender } },
+      { $group: { _id: '$threadRootId', count: { $sum: 1 } } },
+    ]) : [];
+    const countById = new Map(counts.map(c => [String(c._id), c.count]));
+    res.json({ messages: messages.map(m => ({ ...serializeMessage(m), replyCount: countById.get(String(m._id)) || 0 })), root: serializeMessage(root), hasMore });
   } catch (err) {
     console.error('GET /api/chats/:id/messages error:', err);
     res.status(500).json({ error: 'Failed to fetch messages' });
@@ -319,13 +388,21 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
+    if (!(await directRecipientAvailable(chat, req.user))) {
+      return res.status(403).json({ error: 'This conversation is unavailable' });
+    }
+
     // Validate body
-    const { text, mediaUrl, mediaUrls, mediaTypes, replyTo } = req.body;
+    const { text, mediaUrl, mediaUrls, mediaTypes, replyTo, threadRootId } = req.body;
     const bodyError = validateMessage(req.body, req.user._id);
     if (bodyError) return res.status(400).json({ error: bodyError });
     if (replyTo && !(await Message.exists({ _id: replyTo, chatId, deletedAt: null }))) {
       return res.status(400).json({ error: 'Reply must reference a message in this chat' });
     }
+    if (threadRootId && !(await Message.exists({
+      _id: threadRootId, chatId, deletedAt: null, threadRootId: null,
+      senderId: { $nin: req.user.blockedUsers || [] },
+    }))) return res.status(400).json({ error: 'Thread must reference a visible top-level message in this chat' });
     const cleanedMediaUrls = Array.isArray(mediaUrls)
       ? mediaUrls.filter((url) => typeof url === 'string' && url.trim()).map((url) => url.trim())
       : [];
@@ -346,6 +423,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
       mediaUrl: mediaUrl?.trim() || cleanedMediaUrls[0] || '',
       mediaUrls: cleanedMediaUrls,
       mediaTypes: cleanedMediaTypes.slice(0, cleanedMediaUrls.length),
+      ...(threadRootId ? { threadRootId } : {}),
       ...(replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? { replyTo } : {}),
     });
 
@@ -357,6 +435,9 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
 
     if (req.io) {
       req.io.to(chatId).emit('newMessage', serializeMessage(populated));
+      if (threadRootId) req.io.to(chatId).emit('threadUpdated', {
+        rootId: threadRootId, senderId: String(req.user._id),
+      });
     }
 
     // Fan out push notifications to members with tokens, excluding sender
@@ -371,7 +452,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
     }).select('pushToken classNotif replyNotif _id').lean();
 
     if (recipients.length > 0) {
-      const isReply = !!populated.replyTo;
+      const isReply = !!(populated.replyTo || populated.threadRootId);
       const isClassChat = !!chat.course;
 
       const eligibleTokens = recipients
@@ -387,7 +468,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
         sendPush(eligibleTokens, {
           title: senderName,
           body: populated.text || '📎 Media',
-          data: { chatId },
+          data: { chatId, ...(threadRootId ? { threadId: threadRootId } : {}) },
         });
       }
     }
@@ -437,6 +518,10 @@ router.post('/:chatId/messages/:id/react', requireAuth, reactionRateLimit, async
     const accessChat = await Chat.findById(chatId).lean();
     if (!accessChat || !accessChat.members.some((member) => member.toString() === req.user._id.toString())) {
       return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
+    if (!(await directRecipientAvailable(chat, req.user))) {
+      return res.status(403).json({ error: 'This conversation is unavailable' });
     }
 
     const message = await Message.findOne({ _id: messageId, chatId });
@@ -500,6 +585,8 @@ router.delete('/:id/members/me', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
+    if (chat.isGroup === false) return res.status(400).json({ error: 'Archive direct messages instead of leaving them' });
+
     // Remove user
     chat.members = chat.members.filter((memberId) => memberId.toString() !== userIdStr);
     
@@ -537,6 +624,10 @@ router.put('/:chatId/messages/:id', requireAuth, async (req, res) => {
     const accessChat = await Chat.findById(chatId).lean();
     if (!accessChat || !accessChat.members.some((member) => member.toString() === req.user._id.toString())) {
       return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
+    if (!(await directRecipientAvailable(accessChat, req.user))) {
+      return res.status(403).json({ error: 'This conversation is unavailable' });
     }
 
     const message = await Message.findOne({ _id: messageId, chatId });

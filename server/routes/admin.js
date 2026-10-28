@@ -1,3 +1,4 @@
+import { serializeMedia } from '../utils/media.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import Report from '../../models/Report.js';
@@ -125,7 +126,7 @@ router.get('/reports', adminAuth, async (req, res) => {
       { $count: 'n' },
     ]);
 
-    res.json({ items, pendingCount: pendingTargets[0]?.n ?? 0 });
+    res.json({ items: serializeMedia(items), pendingCount: pendingTargets[0]?.n ?? 0 });
   } catch (err) {
     console.error('GET /api/admin/reports error:', err);
     res.status(500).json({ error: 'Failed to fetch reports' });
@@ -182,14 +183,14 @@ router.get('/reports/:targetType/:targetId', adminAuth, async (req, res) => {
     const moderators = await User.find({ _id: { $in: moderatorIds } }).select('_id displayName').lean();
     const moderatorName = Object.fromEntries(moderators.map((m) => [m._id.toString(), m.displayName]));
 
-    res.json({
+    res.json(serializeMedia({
       targetType,
       target,
       targetUser: summarizeUser(targetUser),
       reports,
       context,
       history: history.map((h) => ({ ...h, byName: h.by ? moderatorName[h.by.toString()] ?? null : null })),
-    });
+    }));
   } catch (err) {
     console.error('GET /api/admin/reports/:targetType/:targetId error:', err);
     res.status(500).json({ error: 'Failed to fetch report' });
@@ -266,7 +267,7 @@ router.post('/reports/resolve', adminAuth, async (req, res) => {
         .populate('senderId', '_id displayName avatarUrl')
         .populate('reactions.userId', '_id displayName')
         .lean();
-      req.io?.to(message.chatId.toString()).emit('messageDeleted', populated);
+      req.io?.to(message.chatId.toString()).emit('messageDeleted', serializeMedia(populated));
 
       actions.push('removed_message');
       history.push({ action: 'removed_message', messageText: target.text?.slice(0, 200) || null });
@@ -384,7 +385,7 @@ async function accountAction(req, res, { action, check, update }) {
 
     if (action === 'banned') req.io?.in(`user:${user._id}`).disconnectSockets(true);
 
-    return res.json({ user: summarizeUser(updated) });
+    return res.json(serializeMedia({ user: summarizeUser(updated) }));
   } catch (err) {
     console.error(`POST /api/admin/users/:id/${action} error:`, err);
     return res.status(500).json({ error: 'Internal server error' });

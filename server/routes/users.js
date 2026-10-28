@@ -1,3 +1,4 @@
+import { serializeUser, serializeAvatar } from '../utils/serializers.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import User from '../../models/User.js';
@@ -5,7 +6,7 @@ import Chat from '../../models/Chat.js';
 import Course from '../../models/Course.js';
 import Message from '../../models/Message.js';
 import Feedback from '../../models/Feedback.js';
-import { devAuth } from '../middleware/devAuth.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { enrollmentRateLimit } from '../middleware/rateLimit.js';
 import { CURRENT_TERMS_VERSION } from '../utils/terms.js';
 import { isReviewAccount } from '../utils/reviewLogin.js';
@@ -17,7 +18,7 @@ const router = Router();
 // ---------------------------------------------------------------------------
 // GET /api/users/me — Return the current user with populated courses
 // ---------------------------------------------------------------------------
-router.get('/me', devAuth, async (req, res) => {
+router.get('/me', requireAuth, async (req, res) => {
   try {
     // moderationHistory holds internal moderator notes; admins see it through
     // /api/admin, users only get their notices.
@@ -27,7 +28,7 @@ router.get('/me', devAuth, async (req, res) => {
       .lean();
 
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ user, currentTermsVersion: CURRENT_TERMS_VERSION });
+    res.json({ user: serializeUser(user), currentTermsVersion: CURRENT_TERMS_VERSION });
   } catch (err) {
     console.error('GET /api/users/me error:', err);
     res.status(500).json({ error: 'Failed to fetch user' });
@@ -42,7 +43,7 @@ router.get('/me', devAuth, async (req, res) => {
 //
 // Response: { termsAcceptedAt, termsVersion }
 // ---------------------------------------------------------------------------
-router.put('/me/terms', devAuth, async (req, res) => {
+router.put('/me/terms', requireAuth, async (req, res) => {
   try {
     const { version } = req.body;
     if (version !== CURRENT_TERMS_VERSION) {
@@ -81,7 +82,7 @@ router.put('/me/terms', devAuth, async (req, res) => {
 //
 // Response: { user: User }  (with populated courses)
 // ---------------------------------------------------------------------------
-router.put('/me/courses', devAuth, enrollmentRateLimit, async (req, res) => {
+router.put('/me/courses', requireAuth, enrollmentRateLimit, async (req, res) => {
   try {
     const { courseIds } = req.body;
 
@@ -154,7 +155,7 @@ router.put('/me/courses', devAuth, enrollmentRateLimit, async (req, res) => {
     await user.save();
 
     const populated = await User.findById(user._id).populate('courses').lean();
-    res.json({ user: populated });
+    res.json({ user: serializeUser(populated) });
   } catch (err) {
     console.error('PUT /api/users/me/courses error:', err);
     res.status(500).json({ error: 'Failed to update courses' });
@@ -162,7 +163,7 @@ router.put('/me/courses', devAuth, enrollmentRateLimit, async (req, res) => {
 });
 
 // GET /api/users/me/stats
-router.get('/me/stats', devAuth, async (req, res) => {
+router.get('/me/stats', requireAuth, async (req, res) => {
   try {
     const userId = req.user._id;
     const user = await User.findById(userId).lean();
@@ -185,7 +186,7 @@ router.get('/me/stats', devAuth, async (req, res) => {
 });
 
 // PUT /api/users/me/notifications
-router.put('/me/notifications', devAuth, async (req, res) => {
+router.put('/me/notifications', requireAuth, async (req, res) => {
   try {
     const { notifEnabled, classNotif, replyNotif } = req.body;
 
@@ -202,7 +203,7 @@ router.put('/me/notifications', devAuth, async (req, res) => {
       .select('notifEnabled classNotif replyNotif')
       .lean();
 
-    return res.json(user);
+    return res.json(serializeUser(user));
   } catch (err) {
     console.error('PUT /api/users/me/notifications error:', err);
     return res.status(500).json({ error: 'Failed to update notification preferences' });
@@ -210,7 +211,7 @@ router.put('/me/notifications', devAuth, async (req, res) => {
 });
 
 // PUT /api/users/me/profile — Save year, major, goal
-router.put('/me/profile', devAuth, async (req, res) => {
+router.put('/me/profile', requireAuth, async (req, res) => {
   try {
     const { year, major, goal } = req.body;
     for (const field of ['year', 'major', 'goal']) {
@@ -226,7 +227,7 @@ router.put('/me/profile', devAuth, async (req, res) => {
     const user = await User.findByIdAndUpdate(req.user._id, update, { new: true, runValidators: true })
       .populate('courses')
       .lean();
-    res.json({ user });
+    res.json({ user: serializeUser(user) });
   } catch (err) {
     console.error('PUT /api/users/me/profile error:', err);
     res.status(500).json({ error: 'Failed to update profile' });
@@ -234,7 +235,7 @@ router.put('/me/profile', devAuth, async (req, res) => {
 });
 
 // PUT /api/users/me/push-token
-router.put('/me/push-token', devAuth, async (req, res) => {
+router.put('/me/push-token', requireAuth, async (req, res) => {
   try {
     const { pushToken } = req.body;
 
@@ -256,7 +257,7 @@ router.put('/me/push-token', devAuth, async (req, res) => {
 });
 
 // PUT /api/users/me/avatar
-router.put('/me/avatar', devAuth, async (req, res) => {
+router.put('/me/avatar', requireAuth, async (req, res) => {
   try {
     const { avatarUrl } = req.body;
 
@@ -270,7 +271,7 @@ router.put('/me/avatar', devAuth, async (req, res) => {
       { new: true, runValidators: true }
     ).lean();
 
-    return res.json({ avatarUrl: user.avatarUrl });
+    return res.json({ avatarUrl: serializeAvatar(user.avatarUrl) });
   } catch (err) {
     console.error('PUT /api/users/me/avatar error:', err);
     return res.status(500).json({ error: 'Failed to update avatar' });
@@ -283,7 +284,7 @@ router.put('/me/avatar', devAuth, async (req, res) => {
 // The app shows unseen notices (warnings, mutes, removed messages) once when
 // it opens, then calls this.
 // ---------------------------------------------------------------------------
-router.post('/me/notices/seen', devAuth, async (req, res) => {
+router.post('/me/notices/seen', requireAuth, async (req, res) => {
   try {
     await User.updateOne(
       { _id: req.user._id },
@@ -302,12 +303,12 @@ router.post('/me/notices/seen', devAuth, async (req, res) => {
 //
 // Response: { users: [{ _id, displayName, avatarUrl }] }
 // ---------------------------------------------------------------------------
-router.get('/me/blocked', devAuth, async (req, res) => {
+router.get('/me/blocked', requireAuth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .populate('blockedUsers', '_id displayName avatarUrl')
       .lean();
-    res.json({ users: user?.blockedUsers ?? [] });
+    res.json({ users: (user?.blockedUsers ?? []).map(serializeUser) });
   } catch (err) {
     console.error('GET /api/users/me/blocked error:', err);
     res.status(500).json({ error: 'Failed to fetch blocked users' });
@@ -325,7 +326,7 @@ router.get('/me/blocked', devAuth, async (req, res) => {
 //
 // Response: { blockedUsers: string[] }
 // ---------------------------------------------------------------------------
-router.post('/:id/block', devAuth, async (req, res) => {
+router.post('/:id/block', requireAuth, async (req, res) => {
   try {
     const targetId = req.params.id;
     if (!mongoose.Types.ObjectId.isValid(targetId)) {
@@ -351,7 +352,7 @@ router.post('/:id/block', devAuth, async (req, res) => {
   }
 });
 
-router.delete('/:id/block', devAuth, async (req, res) => {
+router.delete('/:id/block', requireAuth, async (req, res) => {
   try {
     const targetId = req.params.id;
     if (!mongoose.Types.ObjectId.isValid(targetId)) {
@@ -390,7 +391,7 @@ router.delete('/:id/block', devAuth, async (req, res) => {
 //
 // Response: 204
 // ---------------------------------------------------------------------------
-router.delete('/me', devAuth, async (req, res) => {
+router.delete('/me', requireAuth, async (req, res) => {
   try {
     const userId = req.user._id;
     const now = new Date();

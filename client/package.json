@@ -8,7 +8,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "postinstall": "patch-package --error-on-fail",
-    "test:security": "node scripts/check-token-storage.cjs && node scripts/check-security-dependencies.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "test:security": "npm test && node scripts/check-security-dependencies.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/quicksand": "^0.4.1",

@@ -1,9 +1,10 @@
+import { serializeMedia } from '../utils/media.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import Report from '../../models/Report.js';
 import User from '../../models/User.js';
 import Message from '../../models/Message.js';
-import { devAuth } from '../middleware/devAuth.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { reportRateLimit } from '../middleware/rateLimit.js';
 import { sendPush } from '../utils/push.js';
 
@@ -38,7 +39,7 @@ async function notifyAdmins(report, reporterId) {
 // Each report includes `targetName` (the reported user, or the sender of the
 // reported message) and, for messages, a short `targetPreview`. Moderator
 // notes and actions are left out; reporters only see the status.
-router.get('/me', devAuth, async (req, res) => {
+router.get('/me', requireAuth, async (req, res) => {
   try {
     const reports = await Report.find({ reporterId: req.user._id })
       .sort({ createdAt: -1 })
@@ -69,14 +70,14 @@ router.get('/me', devAuth, async (req, res) => {
       return { ...report, targetName: userById[id]?.displayName ?? null, targetPreview: null };
     });
 
-    return res.json(enriched);
+    return res.json(serializeMedia(enriched));
   } catch (err) {
     console.error('GET /api/reports/me error:', err);
     return res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
 
-router.post('/', devAuth, reportRateLimit, async (req, res) => {
+router.post('/', requireAuth, reportRateLimit, async (req, res) => {
   try {
     const { targetType, targetId, reason, details } = req.body;
 

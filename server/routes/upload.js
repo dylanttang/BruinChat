@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { v2 as cloudinary } from 'cloudinary';
-import { devAuth } from '../middleware/devAuth.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { uploadRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 
 const ALLOWED_FOLDERS = new Set(['avatars', 'messages']);
 
-router.get('/signature', devAuth, uploadRateLimit, (req, res) => {
+router.get('/signature', requireAuth, uploadRateLimit, (req, res) => {
   const { folder } = req.query;
 
   if (!folder || !ALLOWED_FOLDERS.has(folder)) {

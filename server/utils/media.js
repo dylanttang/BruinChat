@@ -52,16 +52,6 @@ export function serializeMedia(payload) {
   return visit(JSON.parse(JSON.stringify(payload)));
 }
 
-export function mediaResponseMiddleware(req, res, next) {
-  const json = res.json.bind(res);
-  res.json = (payload) => {
-    if (!req.user) return json(payload);
-    res.set('Cache-Control', 'private, no-store');
-    return json(serializeMedia(payload));
-  };
-  next();
-}
-
 // Stored media references on a message (single mediaUrl or mediaUrls).
 export function messageMediaReferences(message) {
   return [...(message?.mediaUrls || []), message?.mediaUrl].filter(Boolean);

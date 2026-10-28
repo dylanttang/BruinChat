@@ -1,7 +1,7 @@
-import { devAuth } from './devAuth.js';
+import { requireAuth } from './requireAuth.js';
 
 export function adminAuth(req, res, next) {
-  devAuth(req, res, () => {
+  requireAuth(req, res, () => {
     if (req.user?.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }

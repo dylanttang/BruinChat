@@ -22,6 +22,7 @@ import MessageBubble from "./MessageBubble";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { uploadToCloudinary } from "../../lib/cloudinary";
+import { startDirectMessage, conversationTitle } from "../../lib/directMessages";
 import { createSocket } from "../../lib/socket";
 import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
@@ -145,6 +146,7 @@ function injectDateSeparators(messages: Message[]): ListItem[] {
 type Chat = {
   _id: string;
   name: string;
+  isGroup?: boolean;
   members: { _id: string; displayName: string }[];
 };
 
@@ -579,7 +581,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         </TouchableOpacity>
 
         <Text style={styles.title} numberOfLines={1}>
-          {threadId ? "Thread" : chat?.name ?? "Loading..."}
+          {threadId ? "Thread" : (chat ? conversationTitle(chat, currentUserId) : "Loading...")}
         </Text>
 
         <TouchableOpacity accessibilityLabel="Conversation info" onPress={() => router.push(`/chat/${id}/info`)}>
@@ -788,6 +790,13 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       </KeyboardAvoidingView>
 
       <UserProfileSheet
+        onMessage={profileUser && profileUser._id !== currentUserId ? async () => {
+          try {
+            const chatId = await startDirectMessage({ recipientId: profileUser._id });
+            setProfileUser(null);
+            router.push(`/chat/${chatId}`);
+          } catch (error) { Alert.alert("Could not start message", error instanceof Error ? error.message : "Please try again"); }
+        } : undefined}
         user={profileUser}
         isBlocked={!!profileUser && blockedIds.has(profileUser._id)}
         onClose={() => setProfileUser(null)}

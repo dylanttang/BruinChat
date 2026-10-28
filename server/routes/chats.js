@@ -23,6 +23,15 @@ const mediaLabelByType = {
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']);
 const videoExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm']);
 
+async function directRecipientAvailable(chat, user) {
+  if (chat.isGroup !== false) return true;
+  const recipientId = chat.members.find(id => String(id) !== String(user._id));
+  if (!recipientId || (user.blockedUsers || []).some(id => String(id) === String(recipientId))) return false;
+  return Boolean(await User.exists({
+    _id: recipientId, bannedAt: null, deletedAt: null, blockedUsers: { $ne: user._id },
+  }));
+}
+
 function parseLimit(value, defaultLimit, maxLimit) {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return defaultLimit;
@@ -61,6 +70,9 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const limit = parseLimit(req.query.limit, CHAT_LIST_DEFAULT_LIMIT, CHAT_LIST_MAX_LIMIT);
     const query = { members: req.user._id, archivedBy: { $ne: req.user._id } };
+    if (req.query.kind === 'direct') query.isGroup = false;
+    else if (req.query.kind === 'group') query.isGroup = { $ne: false };
+    else if (req.query.kind) return res.status(400).json({ error: 'Invalid chat kind' });
 
     if (req.query.before) {
       if (!mongoose.Types.ObjectId.isValid(req.query.before)) {
@@ -68,6 +80,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
 
       const cursorChat = await Chat.findOne({
+        ...(query.isGroup !== undefined ? { isGroup: query.isGroup } : {}),
         _id: req.query.before,
         members: req.user._id,
         archivedBy: { $ne: req.user._id },
@@ -136,6 +149,47 @@ router.get('/', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('GET /api/chats error:', err);
     res.status(500).json({ error: 'Failed to fetch chats' });
+  }
+});
+
+// Find or create a private two-person conversation. The unique pair key makes
+// repeated requests (including simultaneous requests from both users) idempotent.
+router.post('/direct', requireAuth, messageSendRateLimit, async (req, res) => {
+  try {
+    const blocked = postingBlock(req.user);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
+    const username = typeof req.body.username === 'string' ? req.body.username.trim().toLowerCase() : '';
+    const recipientId = req.body.recipientId;
+    if (recipientId !== undefined ? typeof recipientId !== 'string' || !mongoose.Types.ObjectId.isValid(recipientId) : !username || username.length > 64) {
+      return res.status(400).json({ error: 'Choose a classmate or enter a valid username' });
+    }
+    const recipient = await User.findOne({
+      ...(recipientId ? { _id: recipientId } : { username }), bannedAt: null, deletedAt: null,
+      blockedUsers: { $ne: req.user._id },
+    }).select('_id displayName').lean();
+    if (!recipient || (req.user.blockedUsers || []).some(id => String(id) === String(recipient._id))) {
+      return res.status(404).json({ error: 'This conversation is unavailable' });
+    }
+    if (String(recipient._id) === String(req.user._id)) return res.status(400).json({ error: 'Choose another user' });
+    const members = [String(req.user._id), String(recipient._id)].sort();
+    const directKey = members.join(':');
+    // Reuse conversations created before directKey was introduced.
+    let chat = await Chat.findOne({ isGroup: false, members: { $all: members, $size: 2 } }).lean();
+    if (!chat) {
+      try {
+        chat = await Chat.findOneAndUpdate({ directKey }, { $setOnInsert: {
+          directKey, members, isGroup: false, name: 'Direct message', createdBy: req.user._id,
+        } }, { upsert: true, new: true, runValidators: true }).lean();
+      } catch (error) {
+        if (error.code !== 11000) throw error;
+        chat = await Chat.findOne({ directKey }).lean();
+      }
+    }
+    await Chat.findByIdAndUpdate(chat._id, { $pull: { archivedBy: req.user._id } });
+    res.json({ chat: serializeChat(chat) });
+  } catch (error) {
+    console.error('POST /api/chats/direct error:', error);
+    res.status(500).json({ error: 'Failed to start direct message' });
   }
 });
 
@@ -334,6 +388,10 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
+    if (!(await directRecipientAvailable(chat, req.user))) {
+      return res.status(403).json({ error: 'This conversation is unavailable' });
+    }
+
     // Validate body
     const { text, mediaUrl, mediaUrls, mediaTypes, replyTo, threadRootId } = req.body;
     const bodyError = validateMessage(req.body, req.user._id);
@@ -462,6 +520,10 @@ router.post('/:chatId/messages/:id/react', requireAuth, reactionRateLimit, async
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
+    if (!(await directRecipientAvailable(chat, req.user))) {
+      return res.status(403).json({ error: 'This conversation is unavailable' });
+    }
+
     const message = await Message.findOne({ _id: messageId, chatId });
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
@@ -523,6 +585,8 @@ router.delete('/:id/members/me', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
+    if (chat.isGroup === false) return res.status(400).json({ error: 'Archive direct messages instead of leaving them' });
+
     // Remove user
     chat.members = chat.members.filter((memberId) => memberId.toString() !== userIdStr);
     
@@ -560,6 +624,10 @@ router.put('/:chatId/messages/:id', requireAuth, async (req, res) => {
     const accessChat = await Chat.findById(chatId).lean();
     if (!accessChat || !accessChat.members.some((member) => member.toString() === req.user._id.toString())) {
       return res.status(403).json({ error: 'You are not a member of this chat' });
+    }
+
+    if (!(await directRecipientAvailable(accessChat, req.user))) {
+      return res.status(403).json({ error: 'This conversation is unavailable' });
     }
 
     const message = await Message.findOne({ _id: messageId, chatId });

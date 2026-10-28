@@ -392,3 +392,9 @@ Significant decisions that shaped the architecture, dated:
 Send a thread reply through the existing message POST route with `threadRootId`. The root must be a visible, undeleted main-conversation message in the same chat. `replyTo` remains the legacy quoted-reply reference; existing data needs no migration. Thread replies are excluded from the main list. Membership, moderation, media ownership, and blocked-user filtering still apply. `threadUpdated` events carry `rootId` and `senderId`; typing events optionally carry `threadId`.
 
 The client routes pass `chatId` and optional `threadId` to `client/components/conversation/ConversationScreen.tsx`. It owns the shared message list, composer, attachments, reactions, moderation, pagination, and socket lifecycle. `MessageBubble.tsx` provides the shared message presentation outside the routing tree.
+
+## Direct messages
+
+`POST /api/chats/direct` takes a `recipientId` or exact `username` and returns `{ chat }`, reusing the existing two-person conversation. The server derives membership and a canonical `directKey`; a partial unique index prevents concurrent duplicate creation. Deploy the schema's unique `directKey` index before enabling this endpoint if automatic index creation is disabled. Existing DMs without this key are reused.
+
+`GET /api/chats?kind=direct|group` filters before pagination. Both account availability and blocks are checked when starting or sending DMs, including their threads. DMs can be archived and reopened; participants cannot leave and change their pair identity. `ConversationInbox` is shared by home and `/direct`, and every conversation uses the same `ConversationScreen`, including threads inside DMs.

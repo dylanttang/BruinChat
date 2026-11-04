@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "./MessageBubble";
+import SwipeToReply from "./SwipeToReply";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { uploadToCloudinary } from "../../lib/cloudinary";
@@ -234,6 +235,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
@@ -430,6 +432,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       else next.delete(userId);
       return next;
     });
+    if (blocked && replyingTo?.senderId._id === userId) setReplyingTo(null);
+  };
+
+  const startReply = (target: Message) => {
+    setReplyingTo(target);
+    inputRef.current?.focus();
   };
 
   const blockUser = (target: Message) => {
@@ -482,9 +490,11 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     // Clear the box right away so the keyboard stays up and the user can keep
     // typing while this one sends; put it back if the send fails.
     const media = pendingMedia;
+    const reply = replyingTo;
     setSending(true);
     setMessage("");
     setPendingMedia([]);
+    setReplyingTo(null);
     stopTyping();
     try {
       const mediaUrls = [];
@@ -493,7 +503,11 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       }
       const response = await apiFetch(`/api/chats/${id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ text, mediaUrls, mediaTypes: media.map(item => item.type), ...(threadId ? { threadRootId: threadId } : {}) }),
+        body: JSON.stringify({
+          text, mediaUrls, mediaTypes: media.map(item => item.type),
+          ...(threadId ? { threadRootId: threadId } : {}),
+          ...(reply ? { replyTo: reply._id } : {}),
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw Object.assign(new Error(data.error || `HTTP ${response.status}`), data);
@@ -502,6 +516,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       console.error("Failed to send:", err);
       setMessage(current => current || text);
       setPendingMedia(current => current.length ? current : media);
+      setReplyingTo(current => current ?? reply);
       if (err?.code === "MUTED") {
         setMutedUntil(new Date(err.mutedUntil));
       } else if (err?.code === "BANNED") {
@@ -639,6 +654,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             }
             const msg = item as Message;
             return (
+              <SwipeToReply enabled={!msg.deletedAt && !error} onReply={() => startReply(msg)}>
               <MessageBubble
                 item={{
                   id: msg._id,
@@ -659,6 +675,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                 onReact={(emoji) => reactToMessage(msg._id, emoji)}
                 onPressUser={() => setProfileUser(msg.senderId)}
               />
+              </SwipeToReply>
             );
           }}
         />
@@ -688,16 +705,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               </TouchableOpacity>
             </View>
             <View style={styles.actionButtonsRow}>
-              <TouchableOpacity
-                style={styles.actionReplyButton}
-                onPress={() => {
-                  if (threadId) inputRef.current?.focus();
-                  else router.push(`/chat/${id}/thread/${actionTarget._id}`);
-                  setActionTarget(null);
-                }}
-              >
-                <Text style={styles.actionReplyText}>{threadId ? "Reply to thread" : "Reply in thread"}</Text>
-              </TouchableOpacity>
+              {/* Threads are hidden for now (inline replies instead); existing
+                  threads still open from their "N replies" link. */}
+              {!actionTarget.deletedAt && (
+                <TouchableOpacity
+                  style={styles.actionReplyButton}
+                  onPress={() => {
+                    const target = actionTarget;
+                    setActionTarget(null);
+                    startReply(target);
+                  }}
+                >
+                  <Text style={styles.actionReplyText}>Reply</Text>
+                </TouchableOpacity>
+              )}
               {actionTarget.senderId._id !== currentUserId && (
                 <>
                   <TouchableOpacity
@@ -727,6 +748,17 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         {!!typingLabel && (
           <View style={styles.typingBar}>
             <Text style={styles.typingText}>{typingLabel}</Text>
+          </View>
+        )}
+        {replyingTo && (
+          <View style={styles.replyBar}>
+            <View style={styles.replyBarContent}>
+              <Text style={styles.replyBarName}>Replying to {replyingTo.senderId._id === currentUserId ? "yourself" : replyingTo.senderId.displayName}</Text>
+              <Text style={styles.replyBarText} numberOfLines={1}>{getReplySummary(replyingTo)}</Text>
+            </View>
+            <TouchableOpacity accessibilityLabel="Cancel reply" onPress={() => setReplyingTo(null)} style={styles.replyBarClose}>
+              <Text style={{ fontSize: 18, color: colors.mutedText }}>✕</Text>
+            </TouchableOpacity>
           </View>
         )}
         {pendingMedia.length > 0 && (

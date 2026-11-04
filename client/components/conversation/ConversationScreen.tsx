@@ -479,24 +479,29 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       if (!text) stopTyping();
       return;
     }
+    // Clear the box right away so the keyboard stays up and the user can keep
+    // typing while this one sends; put it back if the send fails.
+    const media = pendingMedia;
     setSending(true);
+    setMessage("");
+    setPendingMedia([]);
+    stopTyping();
     try {
       const mediaUrls = [];
-      for (const item of pendingMedia) {
+      for (const item of media) {
         mediaUrls.push(await uploadToCloudinary(item.uri, "messages", item));
       }
       const response = await apiFetch(`/api/chats/${id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ text, mediaUrls, mediaTypes: pendingMedia.map(item => item.type), ...(threadId ? { threadRootId: threadId } : {}) }),
+        body: JSON.stringify({ text, mediaUrls, mediaTypes: media.map(item => item.type), ...(threadId ? { threadRootId: threadId } : {}) }),
       });
       const data = await response.json();
       if (!response.ok) throw Object.assign(new Error(data.error || `HTTP ${response.status}`), data);
       setMessages(prev => upsertMessage(prev, data.message));
-      setMessage("");
-      setPendingMedia([]);
-      stopTyping();
     } catch (err: any) {
       console.error("Failed to send:", err);
+      setMessage(current => current || text);
+      setPendingMedia(current => current.length ? current : media);
       if (err?.code === "MUTED") {
         setMutedUntil(new Date(err.mutedUntil));
       } else if (err?.code === "BANNED") {
@@ -774,7 +779,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               maxLength={4000}
               onChangeText={handleMessageChange}
               onSubmitEditing={sendMessage}
-              editable={!sending && !error && !(threadId && !!root?.deletedAt)}
+              submitBehavior="submit"
+              editable={!error && !(threadId && !!root?.deletedAt)}
             />
 
             <TouchableOpacity

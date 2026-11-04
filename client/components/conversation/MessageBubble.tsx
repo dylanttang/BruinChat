@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable, Animated } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable } from "react-native";
 import { ResizeMode, Video } from "expo-av";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,7 +26,6 @@ type Props = {
     mediaUrl?: string | null;
     mediaUrls?: string[];
     mediaTypes?: MediaKind[];
-    time: string;
     mine: boolean;
     replyTo?: ReplyMessage | null;
     // names: who reacted with this emoji ("You" first), for the reactions sheet.
@@ -40,10 +39,8 @@ type Props = {
   onPressUser?: () => void;
 };
 
-// How far the reaction pills hang below the bubble, and the room kept free
-// for the timestamp beside them on short bubbles.
+// How far the reaction pills hang below the bubble.
 const REACTION_OVERHANG = 12;
-const TIMESTAMP_ROOM = 56;
 
 // Double-tapping a message reacts with this, like Instagram's double-tap to like.
 const LIKE_EMOJI = "❤️";
@@ -103,7 +100,6 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
   const hasReactions = !!item.reactions?.length;
   const hasMyReaction = !!item.reactions?.some((r) => r.reactedByMe);
 
-  const heartAnim = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef(0);
   const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -113,16 +109,11 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
 
   // Only ever sets the heart: double-tapping a message you already liked
   // shouldn't un-like it (removing is done from the reactions sheet). If you'd
-  // reacted with something else, the server swaps it for the heart.
+  // reacted with something else, the server swaps it for the heart. The
+  // heart just shows up as a reaction pill; no separate big-heart animation.
   const likeMessage = () => {
     const alreadyLiked = item.reactions?.some((r) => r.emoji === LIKE_EMOJI && r.reactedByMe);
     if (!alreadyLiked) onReact?.(LIKE_EMOJI);
-
-    heartAnim.setValue(0);
-    Animated.sequence([
-      Animated.spring(heartAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
-      Animated.timing(heartAnim, { toValue: 0, duration: 200, delay: 250, useNativeDriver: true }),
-    ]).start();
   };
 
   // A second tap within DOUBLE_TAP_MS likes the message. A single tap's own
@@ -188,9 +179,11 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
           <View
             style={[
               { alignSelf: isMe ? "flex-end" : "flex-start" },
-              // Keep short bubbles wide enough that the reactions don't cover
-              // the timestamp on the left.
-              hasReactions && !isMe && { minWidth: reactionsWidth + TIMESTAMP_ROOM },
+              // Leave room below for the pills so they don't overlap the next
+              // message, and keep short bubbles from others at least as wide
+              // as their reactions so the pills don't spill over the avatar.
+              hasReactions && { marginBottom: REACTION_OVERHANG },
+              hasReactions && !isMe && { minWidth: reactionsWidth + 8 },
             ]}
           >
           <LinearGradient
@@ -259,21 +252,6 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
             <Text style={{ color: colors.primary, fontFamily: fonts.bold, fontSize: 13 }}>{`${replyCount} ${replyCount === 1 ? "reply" : "replies"}`}</Text>
           </TouchableOpacity>}
 
-          {/* Heart that pops over the bubble on double-tap. */}
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              StyleSheet.absoluteFill,
-              styles.heartBurst,
-              {
-                opacity: heartAnim,
-                transform: [{ scale: heartAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }],
-              },
-            ]}
-          >
-            <Text style={styles.heartBurstText}>{LIKE_EMOJI}</Text>
-          </Animated.View>
-
           {hasReactions && (
             <View
               style={styles.reactionsOverlay}
@@ -298,18 +276,6 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
             </View>
           )}
           </View>
-
-          <Text
-            style={[
-              styles.time,
-              { alignSelf: isMe ? "flex-end" : "flex-start" },
-              // Your timestamp is on the same side as the reactions; slide it
-              // left of them rather than down.
-              hasReactions && isMe && { marginRight: reactionsWidth + 2 },
-            ]}
-          >
-            {item.time}
-          </Text>
         </View>
       </TouchableOpacity>
 
@@ -500,12 +466,6 @@ function makeStyles(colors: Colors) {
       fontSize: 12,
       color: colors.subtext,
     },
-    time: {
-      fontFamily: fonts.regular,
-      fontSize: 10,
-      color: colors.mutedText,
-      marginTop: 2,
-    },
     // Hangs half outside the bubble's bottom-right corner (Instagram-style).
     reactionsOverlay: {
       position: "absolute",
@@ -532,13 +492,6 @@ function makeStyles(colors: Colors) {
     },
     myReactionPill: {
       backgroundColor: colors.brandSoft,
-    },
-    heartBurst: {
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    heartBurstText: {
-      fontSize: 40,
     },
     sheetContainer: {
       flex: 1,

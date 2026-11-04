@@ -253,8 +253,10 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
             )}
           </LinearGradient>
 
-          {onOpenThread && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reply in thread" onPress={onOpenThread} style={{ paddingVertical: 8 }}>
-            <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>{replyCount ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}` : "Reply in thread"}</Text>
+          {/* Only show the link once a thread exists; new threads start from
+              the long-press menu's "Reply in thread". */}
+          {onOpenThread && replyCount > 0 && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Open thread, ${replyCount} ${replyCount === 1 ? "reply" : "replies"}`} onPress={onOpenThread} style={{ paddingTop: 4, paddingBottom: 6 }}>
+            <Text style={{ color: colors.primary, fontFamily: fonts.bold, fontSize: 13 }}>{`${replyCount} ${replyCount === 1 ? "reply" : "replies"}`}</Text>
           </TouchableOpacity>}
 
           {/* Heart that pops over the bubble on double-tap. */}

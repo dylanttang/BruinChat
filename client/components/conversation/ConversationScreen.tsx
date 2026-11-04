@@ -125,6 +125,15 @@ function formatDateLabel(iso: string): string {
   });
 }
 
+// Messages don't show their own times (long-press shows it). Like Instagram,
+// a centered time divider appears at the start of each day and after a quiet
+// stretch of this long.
+const TIME_DIVIDER_GAP_MS = 30 * 60 * 1000;
+
+function formatDayAndTime(iso: string): string {
+  return `${formatDateLabel(iso)} at ${formatTime(iso)}`;
+}
+
 function injectDateSeparators(messages: Message[]): ListItem[] {
   // messages are newest-first (inverted list), so iterate and inject separators
   const result: ListItem[] = [];
@@ -137,8 +146,9 @@ function injectDateSeparators(messages: Message[]): ListItem[] {
       curr.getFullYear() !== next.getFullYear() ||
       curr.getMonth() !== next.getMonth() ||
       curr.getDate() !== next.getDate();
-    if (isDifferentDay) {
-      result.push({ _id: `sep-${messages[i]._id}`, type: "date", label: formatDateLabel(messages[i].createdAt) });
+    const isLongGap = !!next && curr.getTime() - next.getTime() >= TIME_DIVIDER_GAP_MS;
+    if (isDifferentDay || isLongGap) {
+      result.push({ _id: `sep-${messages[i]._id}`, type: "date", label: formatDayAndTime(messages[i].createdAt) });
     }
   }
   return result;
@@ -610,7 +620,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       </View>
 
       {threadId && root && !blockedIds.has(root.senderId?._id) && <View style={{ maxHeight: 240, borderBottomWidth: 1, borderColor: colors.border }}>
-        <ScrollView><MessageBubble item={{ id: root._id, user: root.senderId?.displayName ?? "Deleted user", avatarUrl: root.senderId?.avatarUrl, text: root.deletedAt ? "Message deleted" : root.text, mediaUrl: root.mediaUrl, mediaUrls: root.mediaUrls, mediaTypes: root.mediaTypes, time: formatTime(root.createdAt), mine: currentUserId === root.senderId?._id, reactions: groupReactions(root.reactions, currentUserId) }} onReact={emoji => reactToMessage(root._id, emoji)} onPressUser={() => setProfileUser(root.senderId)} /></ScrollView>
+        <ScrollView><MessageBubble item={{ id: root._id, user: root.senderId?.displayName ?? "Deleted user", avatarUrl: root.senderId?.avatarUrl, text: root.deletedAt ? "Message deleted" : root.text, mediaUrl: root.mediaUrl, mediaUrls: root.mediaUrls, mediaTypes: root.mediaTypes, mine: currentUserId === root.senderId?._id, reactions: groupReactions(root.reactions, currentUserId) }} onReact={emoji => reactToMessage(root._id, emoji)} onPressUser={() => setProfileUser(root.senderId)} /></ScrollView>
       </View>}
       {error && <TouchableOpacity onPress={loadData}><Text style={{ color: colors.text, padding: 16 }}>{error}</Text></TouchableOpacity>}
       {/* MESSAGES */}
@@ -664,7 +674,6 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                   mediaUrl: msg.mediaUrl ?? null,
                   mediaUrls: msg.mediaUrls,
                   mediaTypes: msg.mediaTypes,
-                  time: formatTime(msg.createdAt),
                   mine: currentUserId === msg.senderId._id,
                   replyTo: msg.replyTo ?? null,
                   reactions: groupReactions(msg.reactions, currentUserId),
@@ -685,6 +694,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {actionTarget && (
           <View style={styles.actionBar}>
+            <Text style={styles.actionTime}>{formatDayAndTime(actionTarget.createdAt)}</Text>
             <View style={styles.actionTopRow}>
               <View style={styles.actionEmojiRow}>
                 {REACTION_OPTIONS.map((emoji) => (
@@ -810,8 +820,16 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               value={message}
               maxLength={4000}
               onChangeText={handleMessageChange}
-              onSubmitEditing={sendMessage}
-              submitBehavior="submit"
+              // Grows to a few lines instead of scrolling sideways. On phones
+              // Return adds a new line (send with the button); on web, Enter
+              // sends and Shift+Enter adds a line.
+              multiline
+              onKeyPress={Platform.OS === "web" ? (e: any) => {
+                if (e.nativeEvent.key === "Enter" && !e.nativeEvent.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
+              } : undefined}
               editable={!error && !(threadId && !!root?.deletedAt)}
             />
 
@@ -886,18 +904,23 @@ function makeStyles(colors: Colors) {
     inputBar: {
       backgroundColor: colors.card,
       flexDirection: "row",
-      alignItems: "center",
+      // Buttons stay at the bottom as the text box grows.
+      alignItems: "flex-end",
       padding: 10,
       borderTopWidth: 1,
       borderColor: colors.border,
     },
     input: {
       fontFamily: fonts.regular,
+      fontSize: 16,
       flex: 1,
       backgroundColor: colors.inputBg,
       borderRadius: 22,
       paddingHorizontal: 16,
-      height: 44,
+      paddingTop: 11,
+      paddingBottom: 11,
+      minHeight: 44,
+      maxHeight: 120,
       marginHorizontal: 8,
       color: colors.text,
     },
@@ -905,6 +928,7 @@ function makeStyles(colors: Colors) {
       width: 36,
       height: 36,
       borderRadius: 18,
+      marginBottom: 4, // centered on a one-line text box
       backgroundColor: colors.brandSoft,
       alignItems: "center",
       justifyContent: "center",
@@ -917,6 +941,7 @@ function makeStyles(colors: Colors) {
       width: 38,
       height: 38,
       borderRadius: 19,
+      marginBottom: 3,
       backgroundColor: colors.primary,
       alignItems: "center",
       justifyContent: "center",
@@ -1022,6 +1047,12 @@ function makeStyles(colors: Colors) {
       borderTopWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.card,
+    },
+    actionTime: {
+      fontFamily: fonts.regular,
+      fontSize: 12,
+      color: colors.mutedText,
+      textAlign: "center",
     },
     actionTopRow: {
       flexDirection: "row",

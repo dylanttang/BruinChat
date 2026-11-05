@@ -11,11 +11,18 @@ import {
   Alert,
   Image,
   ScrollView,
+  Animated,
+  Easing,
+  LayoutAnimation,
+  LayoutAnimationConfig,
+  AccessibilityInfo,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "./MessageBubble";
@@ -25,6 +32,7 @@ import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { uploadToCloudinary } from "../../lib/cloudinary";
 import { startDirectMessage, conversationTitle } from "../../lib/directMessages";
 import { createSocket } from "../../lib/socket";
+import { confirmSent, isNewToList, receiveMessage } from "../../lib/sentMessages";
 import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
 import ReportModal from "../../components/ReportModal";
@@ -32,6 +40,100 @@ import ReportModal from "../../components/ReportModal";
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
 const TYPING_EVENT_TTL_MS = 3000;
+
+// Instagram-style send: the new bubble pops out of its bottom corner (from
+// 80% size, fading in, with a slight springy overshoot) while the messages
+// above glide up to make room.
+const BUBBLE_START_SCALE = 0.8;
+const BUBBLE_POP_MS = 450;
+const LIST_GLIDE_MS = 420;
+// The same curves run on every platform so iOS, Android and web match: a
+// little overshoot for the bubble, and a plain ease-out (no bounce) for the
+// list. The list curve is the standard ease-out because that's the closest
+// curve LayoutAnimation offers on native (it can't take a custom one).
+const BUBBLE_POP_CURVE = [0.34, 1.4, 0.64, 1] as const;
+const LIST_GLIDE_CURVE = [0, 0, 0.58, 1] as const;
+const BUBBLE_POP_EASING = `cubic-bezier(${BUBBLE_POP_CURVE.join(", ")})`;
+const LIST_GLIDE_EASING = `cubic-bezier(${LIST_GLIDE_CURVE.join(", ")})`;
+// Only animate when the reader is at (or near) the newest message; if they've
+// scrolled up into history, a new message shouldn't move what they're reading.
+const NEAR_BOTTOM_PX = 80;
+
+// iOS/Android: LayoutAnimation glides the rows above up on the UI thread; the
+// bubble's pop runs on the native driver in MessageEntrance.
+const NATIVE_LIST_GLIDE: LayoutAnimationConfig = {
+  duration: LIST_GLIDE_MS,
+  update: { type: LayoutAnimation.Types.easeOut },
+};
+
+// Web: LayoutAnimation does nothing in the browser. Instead, the list's content
+// starts pushed back down by the new row's height (so nothing visibly jumps)
+// and animates up to where it belongs. Transform-only, so the browser runs it
+// without per-frame layout or JavaScript.
+function glideWebListUp(scrollNode: HTMLElement | null | undefined, rowHeight: number) {
+  const content = scrollNode?.firstElementChild as HTMLElement | null | undefined;
+  if (!content?.animate || !rowHeight) return;
+  // The inverted list flips its scroll view with scaleY(-1), so inside it a
+  // negative translateY moves content visually down. "add" stacks a new
+  // glide onto one that's still running instead of jumping.
+  content.animate(
+    [{ transform: `translateY(${-rowHeight}px)` }, { transform: "translateY(0px)" }],
+    { duration: LIST_GLIDE_MS, easing: LIST_GLIDE_EASING, composite: "add" }
+  );
+}
+
+// Wraps each message row and plays the pop when `animate` is set. On web it
+// also measures the row before the browser paints and reports its height, so
+// the list glide starts from exactly where the conversation was.
+function MessageEntrance({ animate, mine, dimmed, onEnter, children }: {
+  animate: boolean;
+  mine: boolean;
+  dimmed: boolean;
+  onEnter: (height: number) => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<View>(null);
+  const isWeb = Platform.OS === "web";
+  const progress = useRef(new Animated.Value(animate && !isWeb ? 0 : 1)).current;
+  const origin = mine ? "right bottom" : "left bottom";
+
+  useLayoutEffect(() => {
+    if (!animate) return;
+    if (isWeb) {
+      const node = ref.current as unknown as HTMLElement | null;
+      onEnter(node?.getBoundingClientRect?.().height ?? 0);
+      node?.animate?.(
+        [
+          { opacity: 0, transform: `scale(${BUBBLE_START_SCALE})`, transformOrigin: origin },
+          { opacity: 1, transform: "scale(1)", transformOrigin: origin },
+        ],
+        { duration: BUBBLE_POP_MS, easing: BUBBLE_POP_EASING }
+      );
+    } else {
+      onEnter(0);
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: BUBBLE_POP_MS,
+        easing: Easing.bezier(...BUBBLE_POP_CURVE),
+        useNativeDriver: true,
+      }).start();
+    }
+    // Mount only: the first render decides whether this row animates.
+  }, []);
+
+  const pop = isWeb ? null : {
+    opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: "clamp" }),
+    transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [BUBBLE_START_SCALE, 1] }) }],
+    transformOrigin: origin,
+  };
+
+  return (
+    // Faded slightly until the server confirms it, like Instagram.
+    <View ref={ref} style={dimmed ? { opacity: 0.6 } : null}>
+      <Animated.View style={pop}>{children}</Animated.View>
+    </View>
+  );
+}
 
 type Reaction = {
   _id?: string;
@@ -53,6 +155,11 @@ type Message = {
   replyCount?: number;
   deletedAt?: string | null;
   reactions?: Reaction[];
+  // Set on our own message while it's still sending. clientKey stays on the
+  // row after the server confirms it, so the row keeps its list key and
+  // doesn't remount (or re-animate) when the real message replaces it.
+  pending?: boolean;
+  clientKey?: string;
 };
 
 type ReplyMessage = {
@@ -211,12 +318,10 @@ function groupReactions(reactions: Reaction[] = [], currentUserId: string | null
   return Array.from(grouped.values());
 }
 
-function upsertMessage(messages: Message[], incoming: Message): Message[] {
-  const existing = messages.some((message) => message._id === incoming._id);
-  if (existing) {
-    return messages.map((message) => (message._id === incoming._id ? { ...message, ...incoming } : message));
-  }
-  return [incoming, ...messages];
+// A sent message keeps its clientKey as its list key, so it stays the same row
+// from sending through confirmed.
+function listKey(item: ListItem): string {
+  return ("clientKey" in item && item.clientKey) || item._id;
 }
 
 function replaceMessage(messages: Message[], incoming: Message): Message[] {
@@ -257,6 +362,42 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [mutedUntil, setMutedUntil] = useState<Date | null>(null);
   const isMuted = !!mutedUntil && mutedUntil > new Date();
+  // Latest messages, so the socket handler can tell a brand-new message from
+  // an echo of one already on screen (our own send arrives twice).
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+  const reduceMotionRef = useRef(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((enabled) => { reduceMotionRef.current = enabled; })
+      .catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", (enabled) => {
+      reduceMotionRef.current = enabled;
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Our own sender info, for showing a message the instant we send it.
+  const meRef = useRef<Message["senderId"] | null>(null);
+  // Inverted list: 0 is the newest message. Updated on scroll.
+  const scrollOffsetRef = useRef(0);
+  // List keys of rows that should pop in when they first render.
+  const enteringKeysRef = useRef<Set<string>>(new Set());
+
+  // Call right before adding a new message to state.
+  const animateEntrance = useCallback((listKey: string) => {
+    if (reduceMotionRef.current || scrollOffsetRef.current > NEAR_BOTTOM_PX) return;
+    enteringKeysRef.current.add(listKey);
+    if (Platform.OS !== "web") LayoutAnimation.configureNext(NATIVE_LIST_GLIDE);
+  }, []);
+
+  const handleRowEnter = useCallback((listKey: string, height: number) => {
+    enteringKeysRef.current.delete(listKey);
+    if (Platform.OS !== "web") return;
+    const scrollNode = (listRef.current as any)?.getScrollableNode?.() as HTMLElement | undefined;
+    glideWebListUp(scrollNode, height);
+  }, []);
 
   const messagesUrl = `/api/chats/${id}/messages${threadId ? `?thread=${threadId}` : ""}`;
   const loadData = useCallback(async () => {
@@ -272,6 +413,11 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       if (meRes.ok) {
         const data = await meRes.json();
         setCurrentUserId(data.user._id);
+        meRef.current = {
+          _id: data.user._id,
+          displayName: data.user.displayName,
+          avatarUrl: data.user.avatarUrl,
+        };
         setBlockedIds(new Set((data.user.blockedUsers ?? []).map(String)));
         setMutedUntil(data.user.mutedUntil ? new Date(data.user.mutedUntil) : null);
       }
@@ -358,7 +504,10 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       socket.on("newMessage", (incoming: Message) => {
         if (blockedIdsRef.current.has(incoming.senderId?._id)) return;
         const parent = incoming.threadRootId;
-        if (threadId ? parent === threadId : !parent) setMessages((prev) => upsertMessage(prev, incoming));
+        if (threadId ? parent === threadId : !parent) {
+          if (isNewToList(messagesRef.current, incoming)) animateEntrance(incoming._id);
+          setMessages((prev) => receiveMessage(prev, incoming));
+        }
         if (incoming.senderId?._id) clearRemoteTypingUser(incoming.senderId._id);
       });
 
@@ -417,7 +566,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         socketRef.current = null;
       }
     };
-  }, [clearRemoteTypingUser, currentUserId, id, stopTyping, threadId, loadData]);
+  }, [animateEntrance, clearRemoteTypingUser, currentUserId, id, stopTyping, threadId, loadData]);
 
   const reactToMessage = useCallback(async (messageId: string, emoji: string) => {
     try {
@@ -478,6 +627,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     () => messages.filter((msg) => !blockedIds.has(msg.senderId?._id)),
     [messages, blockedIds]
   );
+  const listItems = useMemo(() => injectDateSeparators(visibleMessages), [visibleMessages]);
 
   const typingLabel = useMemo(() => {
     const names = typingUserIds.map((userId) => (
@@ -501,6 +651,25 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     // typing while this one sends; put it back if the send fails.
     const media = pendingMedia;
     const reply = replyingTo;
+    // Show the message right away (marked as sending) instead of waiting for
+    // the upload and the server, like iMessage and Instagram do.
+    const clientKey = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const me = meRef.current;
+    if (me) {
+      animateEntrance(clientKey);
+      setMessages(prev => [{
+        _id: clientKey,
+        clientKey,
+        pending: true,
+        text,
+        mediaUrls: media.map(item => item.uri),
+        mediaTypes: media.map(item => item.type),
+        createdAt: new Date().toISOString(),
+        senderId: me,
+        replyTo: reply,
+        ...(threadId ? { threadRootId: threadId } : {}),
+      }, ...prev]);
+    }
     setSending(true);
     setMessage("");
     setPendingMedia([]);
@@ -521,9 +690,10 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       });
       const data = await response.json();
       if (!response.ok) throw Object.assign(new Error(data.error || `HTTP ${response.status}`), data);
-      setMessages(prev => upsertMessage(prev, data.message));
+      setMessages(prev => confirmSent(prev, clientKey, data.message));
     } catch (err: any) {
       console.error("Failed to send:", err);
+      setMessages(prev => prev.filter(item => item.clientKey !== clientKey || !item.pending));
       setMessage(current => current || text);
       setPendingMedia(current => current.length ? current : media);
       setReplyingTo(current => current ?? reply);
@@ -650,9 +820,13 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             finally { setLoadingMore(false); }
           }}
           ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.mutedText} /> : null}
-          data={injectDateSeparators(visibleMessages)}
+          data={listItems}
           inverted
-          keyExtractor={(item) => item._id}
+          keyExtractor={listKey}
+          onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             if ("type" in item && item.type === "date") {
@@ -663,8 +837,15 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               );
             }
             const msg = item as Message;
+            const key = listKey(msg);
             return (
-              <SwipeToReply enabled={!msg.deletedAt && !error} onReply={() => startReply(msg)}>
+              <MessageEntrance
+                animate={enteringKeysRef.current.has(key)}
+                mine={currentUserId === msg.senderId._id}
+                dimmed={!!msg.pending}
+                onEnter={(height) => handleRowEnter(key, height)}
+              >
+              <SwipeToReply enabled={!msg.deletedAt && !msg.pending && !error} onReply={() => startReply(msg)}>
               <MessageBubble
                 item={{
                   id: msg._id,
@@ -678,13 +859,16 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                   replyTo: msg.replyTo ?? null,
                   reactions: groupReactions(msg.reactions, currentUserId),
                 }}
-                onOpenThread={!threadId && (!msg.deletedAt || !!msg.replyCount) ? () => router.push(`/chat/${id}/thread/${msg._id}`) : undefined}
+                // A sending message has no server ID yet, so it can't be
+                // reacted to, replied to or opened until it's confirmed.
+                onOpenThread={!threadId && !msg.pending && (!msg.deletedAt || !!msg.replyCount) ? () => router.push(`/chat/${id}/thread/${msg._id}`) : undefined}
                 replyCount={msg.replyCount ?? 0}
-                onLongPress={() => setActionTarget(msg)}
-                onReact={(emoji) => reactToMessage(msg._id, emoji)}
+                onLongPress={msg.pending ? undefined : () => setActionTarget(msg)}
+                onReact={msg.pending ? undefined : (emoji) => reactToMessage(msg._id, emoji)}
                 onPressUser={() => setProfileUser(msg.senderId)}
               />
               </SwipeToReply>
+              </MessageEntrance>
             );
           }}
         />

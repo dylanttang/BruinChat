@@ -595,6 +595,11 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   };
 
   const openPhotoOptions = () => {
+    // Alert menus don't show on web, so go straight to the browser's file picker.
+    if (Platform.OS === "web") {
+      pickFromLibrary();
+      return;
+    }
     Alert.alert("Add media", undefined, [
       { text: "Photo & Video Library", onPress: pickFromLibrary },
       { text: "Camera", onPress: takePhoto },

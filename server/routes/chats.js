@@ -23,6 +23,15 @@ const mediaLabelByType = {
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']);
 const videoExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm']);
 
+// Class chat names read "MATH 32B — Calculus of Several Variables", which is
+// far too long for a notification title. Keep the course code only.
+function chatNotificationTitle(chat) {
+  const name = (chat.name || '').trim();
+  if (!name) return 'BChat';
+  const [code] = name.split('—');
+  return code.trim() || name;
+}
+
 async function directRecipientAvailable(chat, user) {
   if (chat.isGroup !== false) return true;
   const recipientId = chat.members.find(id => String(id) !== String(user._id));
@@ -465,9 +474,13 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
 
       if (eligibleTokens.length > 0) {
         const senderName = req.user.displayName || 'Someone';
+        const preview = populated.text || '📎 Media';
+        // Direct message chats are all named 'Direct message', so the sender is
+        // the only useful title there; group chats lead with the chat name.
+        const isDirect = chat.isGroup === false;
         sendPush(eligibleTokens, {
-          title: senderName,
-          body: populated.text || '📎 Media',
+          title: isDirect ? senderName : chatNotificationTitle(chat),
+          body: isDirect ? preview : `${senderName}: ${preview}`,
           data: { chatId, ...(threadRootId ? { threadId: threadRootId } : {}) },
         });
       }

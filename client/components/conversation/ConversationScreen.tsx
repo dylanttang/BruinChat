@@ -66,6 +66,16 @@ const NATIVE_LIST_GLIDE: LayoutAnimationConfig = {
   update: { type: LayoutAnimation.Types.easeOut },
 };
 
+// When a reaction is added or removed, the row grows or shrinks to make room
+// for the pill; glide the messages above instead of jumping, and fade the
+// pill in.
+const NATIVE_REACTION_GLIDE: LayoutAnimationConfig = {
+  duration: 220,
+  create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+  update: { type: LayoutAnimation.Types.easeInEaseOut },
+  delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+};
+
 // Web: LayoutAnimation does nothing in the browser. Instead, the list's content
 // starts pushed back down by the new row's height (so nothing visibly jumps)
 // and animates up to where it belongs. Transform-only, so the browser runs it
@@ -392,6 +402,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     if (Platform.OS !== "web") LayoutAnimation.configureNext(NATIVE_LIST_GLIDE);
   }, []);
 
+  // Call right before applying a reaction change to state.
+  const animateReactionChange = useCallback(() => {
+    if (reduceMotionRef.current || Platform.OS === "web") return;
+    LayoutAnimation.configureNext(NATIVE_REACTION_GLIDE);
+  }, []);
+
   const handleRowEnter = useCallback((listKey: string, height: number) => {
     enteringKeysRef.current.delete(listKey);
     if (Platform.OS !== "web") return;
@@ -526,6 +542,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       });
 
       socket.on("messageReacted", (incoming: Message) => {
+        animateReactionChange();
         setMessages((prev) => replaceMessage(prev, incoming));
         setRoot(prev => prev?._id === incoming._id ? incoming : prev);
       });
@@ -566,7 +583,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         socketRef.current = null;
       }
     };
-  }, [animateEntrance, clearRemoteTypingUser, currentUserId, id, stopTyping, threadId, loadData]);
+  }, [animateEntrance, animateReactionChange, clearRemoteTypingUser, currentUserId, id, stopTyping, threadId, loadData]);
 
   const reactToMessage = useCallback(async (messageId: string, emoji: string) => {
     try {
@@ -577,12 +594,13 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
+      animateReactionChange();
       setMessages((prev) => replaceMessage(prev, data.message));
       setRoot(prev => prev?._id === data.message._id ? data.message : prev);
     } catch (err) {
       console.error("Failed to react:", err);
     }
-  }, [id]);
+  }, [animateReactionChange, id]);
 
   const handleBlockedChange = (userId: string, blocked: boolean) => {
     setBlockedIds((prev) => {

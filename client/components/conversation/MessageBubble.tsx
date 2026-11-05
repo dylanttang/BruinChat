@@ -39,8 +39,10 @@ type Props = {
   onPressUser?: () => void;
 };
 
-// How far the reaction pills hang below the bubble.
-const REACTION_OVERHANG = 12;
+// How far the reaction pills hang below the bubble. The pills are ~25px tall,
+// so only their top ~7px overlaps the bubble (like Instagram), which stays
+// inside the bubble's 10px bottom padding and never covers the text.
+const REACTION_OVERHANG = 18;
 
 // Double-tapping a message reacts with this, like Instagram's double-tap to like.
 const LIKE_EMOJI = "❤️";

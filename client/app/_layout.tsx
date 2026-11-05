@@ -14,7 +14,9 @@ import { Platform } from "react-native";
 import { apiFetch } from "../lib/api";
 
 async function registerForPushNotifications() {
-  if (!Device.isDevice) return; // simulators can't receive push notifications
+  // Push is phones only: simulators can't receive it, and on web Expo needs a
+  // separate (VAPID) setup we don't use, so getExpoPushTokenAsync would throw.
+  if (Platform.OS === "web" || !Device.isDevice) return;
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
@@ -59,7 +61,7 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    registerForPushNotifications();
+    registerForPushNotifications().catch((err) => console.error("Push setup failed:", err));
   }, []);
 
   // Hold the first frame until Quicksand is ready so text doesn't flash in

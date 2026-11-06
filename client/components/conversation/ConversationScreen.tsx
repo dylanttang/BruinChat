@@ -30,6 +30,8 @@ import SwipeToReply from "./SwipeToReply";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { uploadToCloudinary } from "../../lib/cloudinary";
+import { mediaSizeError, MediaUploadError } from "../../lib/mediaPolicy";
+import { LIBRARY_MEDIA_OPTIONS, CAMERA_MEDIA_OPTIONS } from "../../lib/mediaPicker";
 import { startDirectMessage, conversationTitle } from "../../lib/directMessages";
 import { createSocket } from "../../lib/socket";
 import { confirmSent, isNewToList, receiveMessage } from "../../lib/sentMessages";
@@ -722,7 +724,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       } else if (err?.code === "TERMS_REQUIRED") {
         router.replace("/auth/terms");
       } else {
-        Alert.alert("Failed to send", "Please try again.");
+        Alert.alert("Failed to send", err instanceof MediaUploadError ? err.message : "Please try again.");
       }
     } finally {
       setSending(false);
@@ -733,8 +735,9 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     const validMedia: PendingMedia[] = assets.flatMap((asset) => {
       const mediaType = asset.type === "video" ? "video" : asset.type === "image" ? "image" : null;
       if (!mediaType) return [];
-      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-        Alert.alert("File too large", "Images and videos must be 10MB or smaller.");
+      const sizeError = mediaSizeError(mediaType, asset.fileSize);
+      if (sizeError) {
+        Alert.alert("File too large", sizeError);
         return [];
       }
       return [{
@@ -756,15 +759,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      allowsMultipleSelection: true,
-      selectionLimit: 10,
-      orderedSelection: true,
-      quality: 0.85,
-    });
-
-    if (!result.canceled) addPickedMedia(result.assets);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync(LIBRARY_MEDIA_OPTIONS);
+      if (!result.canceled) addPickedMedia(result.assets);
+    } catch {
+      Alert.alert("Could not prepare media", "Please try again or choose a different photo or video.");
+    }
   };
 
   const takePhoto = async () => {
@@ -774,12 +774,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images", "videos"],
-      quality: 0.85,
-    });
-
-    if (!result.canceled) addPickedMedia(result.assets);
+    try {
+      const result = await ImagePicker.launchCameraAsync(CAMERA_MEDIA_OPTIONS);
+      if (!result.canceled) addPickedMedia(result.assets);
+    } catch {
+      Alert.alert("Could not prepare media", "Please try recording again.");
+    }
   };
 
   const openPhotoOptions = () => {

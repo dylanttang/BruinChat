@@ -1,8 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { MAX_RECORDING_SECONDS } from './mediaPolicy';
 
-// `quality` controls photos. Videos need their own export/recording settings.
-// iOS exports library videos as compatible H.264/AAC MP4s before returning assets.
+// Photo `quality` does not compress videos; request a compatible 720p iOS export.
 export const LIBRARY_MEDIA_OPTIONS: ImagePicker.ImagePickerOptions = {
   mediaTypes: ['images', 'videos'],
   allowsMultipleSelection: true,

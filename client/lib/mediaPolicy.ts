@@ -1,8 +1,7 @@
 export type MediaKind = 'image' | 'video';
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-// Cloudinary account verified on 2026-11-06: images 10 MiB, videos 100 MiB.
-// Stay below both the plan allowance and the single-request upload threshold.
+// Leave headroom below Cloudinary's 100 MiB allowance and single-request limit.
 export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 export const MAX_RECORDING_SECONDS = 60;
 

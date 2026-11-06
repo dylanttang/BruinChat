@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const loadModule = require('./helpers/load-module.cjs');
 
-function setup({ platform = 'ios', size = 1024, type = 'image', uploadStatus = 200, uploadError, fileExists = true, signatureStatus = 200 } = {}) {
+function setup({ platform = 'ios', size = 1024, type = 'image', uploadStatus = 200, uploadError, uploadThrows = false, fileExists = true, signatureStatus = 200 } = {}) {
   const policy = loadModule('lib/mediaPolicy.ts');
   const requests = [], signatures = [], forms = [];
   class TestFormData {
@@ -25,6 +25,7 @@ function setup({ platform = 'ios', size = 1024, type = 'image', uploadStatus = 2
     fetch: async (url, init) => {
       requests.push({ url, init });
       if (!init) return { ok: true, blob: async () => ({ size, type: type === 'video' ? 'video/mp4' : 'image/jpeg' }) };
+      if (uploadThrows) throw new TypeError('Network request failed');
       return { ok: uploadStatus === 200, status: uploadStatus, json: async () => uploadError
         ? { error: { message: uploadError } }
         : { type: 'authenticated', resource_type: type, public_id: 'messages/student/asset', version: 1, format: type === 'video' ? 'mp4' : 'jpg' } };
@@ -94,4 +95,13 @@ test('missing or empty files cannot request signatures, and avatars cannot be vi
   }
   const h = setup({ type: 'video' });
   await assert.rejects(h.uploadToCloudinary('file:///video.mp4', 'avatars', { type: 'video' }), /photo for your avatar/);
+});
+
+test('network upload failures preserve an actionable media error for the conversation', async () => {
+  const h = setup({ type: 'video', uploadThrows: true });
+  await assert.rejects(h.uploadToCloudinary('file:///video.mp4', 'messages', { type: 'video' }), error => {
+    assert.ok(error instanceof h.policy.MediaUploadError);
+    assert.match(error.message, /Check your connection and try again/);
+    return true;
+  });
 });

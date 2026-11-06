@@ -802,9 +802,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           {threadId ? "Thread" : (chat ? conversationTitle(chat, currentUserId) : "Loading...")}
         </Text>
 
-        <TouchableOpacity accessibilityLabel="Conversation info" onPress={() => router.push(`/chat/${id}/info`)}>
-          <Text style={styles.menuDot}>•••</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {!threadId && (
+            <TouchableOpacity
+              accessibilityLabel="Search messages"
+              onPress={() => router.push(`/chat/${id}/search`)}
+              style={styles.headerAction}
+            >
+              <Text style={styles.searchIcon}>⌕</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity accessibilityLabel="Conversation info" onPress={() => router.push(`/chat/${id}/info`)}>
+            <Text style={styles.menuDot}>•••</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {threadId && root && !blockedIds.has(root.senderId?._id) && <View style={{ maxHeight: 240, borderBottomWidth: 1, borderColor: colors.border }}>
@@ -1093,6 +1104,21 @@ function makeStyles(colors: Colors) {
       textAlign: "center",
       paddingHorizontal: 12,
       color: colors.text,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    headerAction: {
+      paddingVertical: 4,
+      paddingHorizontal: 2,
+    },
+    searchIcon: {
+      fontFamily: fonts.regular,
+      fontSize: 22,
+      color: colors.brand,
+      lineHeight: 22,
     },
     menuDot: {
       fontFamily: fonts.regular,

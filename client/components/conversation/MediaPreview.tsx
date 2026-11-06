@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, Image, Platform } from "react-native";
-import { Audio, ResizeMode, Video } from "expo-av";
+import { VideoView, createVideoPlayer, useVideoPlayer } from "expo-video";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { fonts } from "../../context/ThemeContext";
@@ -56,20 +56,58 @@ function loadDuration(uri: string) {
     video.src = uri;
     return;
   }
-  Audio.Sound.createAsync({ uri }, { shouldPlay: false })
-    .then(({ sound, status }) => {
-      done(status.isLoaded ? status.durationMillis ?? 0 : 0);
-      sound.unloadAsync().catch(() => {});
-    })
-    .catch(() => done(0));
+  durationQueue.push({ uri, done });
+  runDurationQueue();
 }
 
-export function useVideoDuration(uri: string): number | null {
+// On iOS and Android a hidden, muted player that never plays reads the
+// length, then is released. A few at a time, so a message with many videos
+// doesn't open them all at once.
+const MAX_DURATION_LOADS = 3;
+const DURATION_TIMEOUT_MS = 15000;
+const durationQueue: { uri: string; done: (ms: number) => void }[] = [];
+let activeDurationLoads = 0;
+
+function runDurationQueue() {
+  while (activeDurationLoads < MAX_DURATION_LOADS && durationQueue.length) {
+    const { uri, done } = durationQueue.shift()!;
+    activeDurationLoads++;
+    readNativeDuration(uri, (ms) => {
+      activeDurationLoads--;
+      done(ms);
+      runDurationQueue();
+    });
+  }
+}
+
+function readNativeDuration(uri: string, done: (ms: number) => void) {
+  const player = createVideoPlayer(uri);
+  player.muted = true;
+  let finished = false;
+  const finish = (ms: number) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timeout);
+    loaded.remove();
+    failed.remove();
+    player.release();
+    done(Number.isFinite(ms) ? ms : 0);
+  };
+  const loaded = player.addListener("sourceLoad", ({ duration }) => finish(duration * 1000));
+  const failed = player.addListener("statusChange", ({ status }) => {
+    if (status === "error") finish(0);
+  });
+  const timeout = setTimeout(() => finish(0), DURATION_TIMEOUT_MS);
+}
+
+// load: false only reads a length something else already found (the viewer
+// gets it from its own player).
+export function useVideoDuration(uri: string, load = true): number | null {
   const read = () => durations.get(uri) ?? null;
   const duration = useSyncExternalStore(subscribe, read, read);
   useEffect(() => {
-    loadDuration(uri);
-  }, [uri]);
+    if (load) loadDuration(uri);
+  }, [uri, load]);
   return duration;
 }
 
@@ -103,7 +141,11 @@ export function useMediaRatio(item: MediaItem): number | null {
     if (ratios.has(item.uri)) return;
     if (item.type === "image") {
       Image.getSize(item.uri, (width, height) => width && height && setRatio(item.uri, width / height), () => {});
-    } else if (Platform.OS !== "web") {
+    } else if (Platform.OS === "web") {
+      // On web, reading the length also reads the shape.
+      loadDuration(item.uri);
+    } else {
+      // The thumbnail is already rotated upright, so its shape is the video's.
       loadThumbnail(item.uri).catch(() => {});
     }
   }, [item.uri, item.type]);
@@ -125,14 +167,6 @@ function useVideoThumbnail(uri: string): string | null {
   }, [uri]);
 
   return thumbnail;
-}
-
-// Reads the real size of a web video once it can show its first frame.
-// Native passes naturalSize; web passes the <video> element's event.
-export function reportVideoSize(uri: string, event: any) {
-  const width = event?.naturalSize?.width ?? event?.target?.videoWidth;
-  const height = event?.naturalSize?.height ?? event?.target?.videoHeight;
-  if (width && height) setRatio(uri, width / height);
 }
 
 export function measureInWindow(view: View | null): Promise<Rect | null> {
@@ -185,17 +219,14 @@ function DurationBadge({ uri }: { uri: string }) {
   );
 }
 
+// A muted player that never plays, so the <video> shows its first frame.
 function WebVideoFrame({ uri, resizeMode }: { uri: string; resizeMode: "cover" | "contain" }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.muted = true;
+  });
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Video
-        source={{ uri }}
-        style={StyleSheet.absoluteFill}
-        resizeMode={resizeMode === "cover" ? ResizeMode.COVER : ResizeMode.CONTAIN}
-        shouldPlay={false}
-        isMuted
-        onReadyForDisplay={(event) => reportVideoSize(uri, event)}
-      />
+      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit={resizeMode} nativeControls={false} />
     </View>
   );
 }

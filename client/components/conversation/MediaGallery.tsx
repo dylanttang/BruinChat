@@ -18,6 +18,7 @@ import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { Rect, zoomFrom } from "../../lib/mediaLayout";
 import MediaPreview, { MediaItem, measureInWindow } from "./MediaPreview";
 import MediaViewer from "./MediaViewer";
+import { isViewerOpen, useMediaOverlayOpen } from "./mediaOverlay";
 
 const GAP = 4;
 const PADDING = 8;
@@ -44,6 +45,7 @@ type Props = {
 // and shrinks back into it (✕, back, or swipe down from the top). Tapping one opens the swipeable viewer on top;
 // closing that comes back here.
 export default function MediaGallery({ items, origins, onClose }: Props) {
+  useMediaOverlayOpen("gallery");
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const window = useWindowDimensions();
@@ -140,8 +142,9 @@ export default function MediaGallery({ items, origins, onClose }: Props) {
         swipedRef.current = false;
         return false;
       },
-      // A swipe down that starts on a photo or button is taken over too.
-      onMoveShouldSetPanResponderCapture: (_, g) => isSwipeDown(g),
+      // A swipe down that starts on a photo or button is taken over too, but
+      // not from the viewer opened on top.
+      onMoveShouldSetPanResponderCapture: (_, g) => !isViewerOpen() && isSwipeDown(g),
       onPanResponderGrant: () => {
         dragging = false;
       },

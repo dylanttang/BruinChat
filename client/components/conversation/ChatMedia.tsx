@@ -1,10 +1,12 @@
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { Rect, chatGrid, clampRatio, fitWithin } from "../../lib/mediaLayout";
+import { mediaKey } from "../../lib/messageMedia";
 import MediaPreview, { MediaItem, measureInWindow, useMediaRatio } from "./MediaPreview";
 import MediaViewer from "./MediaViewer";
 import MediaGallery from "./MediaGallery";
+import { useChatMediaList } from "./chatMediaList";
 
 // A single photo or video shows at its real shape within this box, like
 // iMessage and Instagram DMs. Several are shown as a grid of square tiles.
@@ -18,6 +20,9 @@ const RADIUS = 18;
 const JOINED_RADIUS = 4;
 
 type Props = {
+  // With it, the viewer swipes through all of the chat's media, not just this
+  // message's.
+  messageId?: string;
   items: MediaItem[];
   // Shown right under the media, at the same width, attached to it.
   caption?: ReactNode;
@@ -30,7 +35,7 @@ type Props = {
 // Media in a message. 1–3 items open straight into the swipeable viewer;
 // 4 or more show as a 2×2 grid ("+N" on the last tile when there are more)
 // and open a grid of all of them first.
-export default function ChatMedia({ items, caption, onPress, onLongPress }: Props) {
+export default function ChatMedia({ messageId, items, caption, onPress, onLongPress }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { shown, wideLast, extra, opensGallery } = chatGrid(items.length);
@@ -39,14 +44,27 @@ export default function ChatMedia({ items, caption, onPress, onLongPress }: Prop
   // A single photo's width depends on its shape; the caption matches it.
   const [singleWidth, setSingleWidth] = useState<number>(SINGLE_MAX_WIDTH);
   const tileRefs = useRef<(View | null)[]>([]);
-  const [viewer, setViewer] = useState<{ index: number; origins: (Rect | null)[] } | null>(null);
+  const chat = useChatMediaList();
+  const [viewer, setViewer] = useState<{ items: MediaItem[]; index: number; origins: (Rect | null)[] } | null>(null);
   const [gallery, setGallery] = useState<{ origins: (Rect | null)[] } | null>(null);
 
   const openAt = (index: number) => {
+    // Swipe through the whole chat when this message is in its list (the
+    // thread's first message, shown above the replies, isn't).
+    const all = chat?.all() ?? [];
+    const start = messageId ? all.findIndex((item) => item.key === mediaKey(messageId, 0)) : -1;
+    if (!opensGallery && chat && start >= 0) {
+      // Measure every photo that's on screen, so the viewer grows out of this
+      // one and shrinks back into whichever it ends on.
+      Promise.all(all.map((item) => measureOnScreen(chat.tiles.get(item.key) ?? null))).then((origins) =>
+        setViewer({ items: all, index: start + index, origins })
+      );
+      return;
+    }
     // Measure every tile so the viewer or grid can grow out of the message
     // and shrink back into whichever photo it ends on.
     Promise.all(items.map((_, i) => (i < shown ? measureInWindow(tileRefs.current[i] ?? null) : null))).then((origins) =>
-      opensGallery ? setGallery({ origins }) : setViewer({ index, origins })
+      opensGallery ? setGallery({ origins }) : setViewer({ items, index, origins })
     );
   };
 
@@ -72,6 +90,9 @@ export default function ChatMedia({ items, caption, onPress, onLongPress }: Prop
               styles={styles}
               tileRef={(view) => {
                 tileRefs.current[index] = view;
+                if (!chat || !messageId) return;
+                if (view) chat.tiles.set(mediaKey(messageId, index), view);
+                else chat.tiles.delete(mediaKey(messageId, index));
               }}
               onWidth={single ? setSingleWidth : undefined}
               onPress={() => onPress(() => openAt(index))}
@@ -84,7 +105,7 @@ export default function ChatMedia({ items, caption, onPress, onLongPress }: Prop
 
       {viewer && (
         <MediaViewer
-          items={items}
+          items={viewer.items}
           initialIndex={viewer.index}
           origins={viewer.origins}
           onClose={() => setViewer(null)}
@@ -93,6 +114,16 @@ export default function ChatMedia({ items, caption, onPress, onLongPress }: Prop
       {gallery && <MediaGallery items={items} origins={gallery.origins} onClose={() => setGallery(null)} />}
     </View>
   );
+}
+
+// Where a tile is, or null if it's scrolled off screen (the viewer then fades
+// in and out instead of growing from a spot that can't be seen).
+function measureOnScreen(view: View | null): Promise<Rect | null> {
+  return measureInWindow(view).then((rect) => {
+    const screen = Dimensions.get("window");
+    const visible = rect && rect.x < screen.width && rect.x + rect.width > 0 && rect.y < screen.height && rect.y + rect.height > 0;
+    return visible ? rect : null;
+  });
 }
 
 type Joined = "left" | "right" | "both" | null;

@@ -79,6 +79,7 @@ export function swipeTarget(
   pageWidth: number,
   { distance = 0.2, velocity = 0.4 } = {}
 ): number {
+  "worklet";
   const next = drag.dx < -pageWidth * distance || drag.vx < -velocity ? index + 1
     : drag.dx > pageWidth * distance || drag.vx > velocity ? index - 1
     : index;
@@ -87,6 +88,7 @@ export function swipeTarget(
 
 // Past the first or last page the drag only follows the finger a little.
 export function resistDrag(index: number, count: number, dx: number, factor = 0.25): number {
+  "worklet";
   const pastStart = index === 0 && dx > 0;
   const pastEnd = index === count - 1 && dx < 0;
   return pastStart || pastEnd ? dx * factor : dx;
@@ -105,4 +107,70 @@ export function formatDuration(ms: number): string {
 export function seekFraction(x: number, width: number): number {
   if (!(width > 0) || !Number.isFinite(x)) return 0;
   return Math.min(1, Math.max(0, x / width));
+}
+
+// Photo zoom in the viewer. These run on the UI thread during gestures (the
+// "worklet" lines), and are plain functions everywhere else.
+export const MAX_ZOOM = 4;
+// Past an edge, a zoomed photo follows the finger this much.
+export const EDGE_RESIST = 0.35;
+
+// How far a photo zoomed to `scale` can move from the center each way before
+// an edge would come in from the side of the screen. The viewer centers
+// photos, so it's the same in both directions; 0 while it still fits.
+export function panBounds(
+  size: { width: number; height: number },
+  scale: number,
+  window: { width: number; height: number }
+): { x: number; y: number } {
+  "worklet";
+  return {
+    x: Math.max(0, (size.width * scale - window.width) / 2),
+    y: Math.max(0, (size.height * scale - window.height) / 2),
+  };
+}
+
+// Pinching past the limits keeps going but slows down more and more, like
+// pulling a scroll view past its end.
+export function rubberBand(value: number, min: number, max: number, dim = 1): number {
+  "worklet";
+  const ease = (past: number) => (1 - 1 / ((past * 0.55) / dim + 1)) * dim;
+  if (value < min) return min - ease(min - value);
+  if (value > max) return max + ease(value - max);
+  return value;
+}
+
+// The new offset when the scale changes from `from` to `to`, so the point
+// under the fingers stays put. `center` is where the photo's center is with
+// no offset (the transform's origin), all along one axis.
+export function zoomAround(offset: number, from: number, to: number, focal: number, center: number): number {
+  "worklet";
+  if (!(from > 0)) return offset;
+  return offset + (focal - center - offset) * (1 - to / from);
+}
+
+// Moves a zoomed photo by a finger's movement along one axis. Past the edge
+// (beyond ±bound) it resists, unless it's moving back in.
+export function dragWithin(offset: number, change: number, bound: number): number {
+  "worklet";
+  const outward = (offset >= bound && change > 0) || (offset <= -bound && change < 0);
+  return offset + (outward ? change * EDGE_RESIST : change);
+}
+
+// Where a zoom settles after the fingers lift: back to 1x if it went below,
+// down to the max if it went above, and moved so no edge shows a gap.
+export function settleZoom(
+  zoom: { scale: number; x: number; y: number },
+  size: { width: number; height: number },
+  window: { width: number; height: number }
+): { scale: number; x: number; y: number } {
+  "worklet";
+  if (zoom.scale <= 1) return { scale: 1, x: 0, y: 0 };
+  const scale = Math.min(zoom.scale, MAX_ZOOM);
+  // Shrinking back from past the max pulls the photo toward the center the
+  // same amount, so it doesn't jump sideways.
+  const shrink = scale / zoom.scale;
+  const bounds = panBounds(size, scale, window);
+  const clamp = (value: number, bound: number) => Math.min(bound, Math.max(-bound, value));
+  return { scale, x: clamp(zoom.x * shrink, bounds.x), y: clamp(zoom.y * shrink, bounds.y) };
 }

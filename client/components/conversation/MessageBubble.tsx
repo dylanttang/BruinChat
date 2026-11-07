@@ -2,10 +2,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable } fro
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
-import { API_URL } from "../../lib/api";
+import { messageMedia, type MediaKind } from "../../lib/messageMedia";
 import ChatMedia from "./ChatMedia";
-
-type MediaKind = "image" | "video";
 
 type ReplyMessage = {
   _id: string;
@@ -44,10 +42,6 @@ const REACTION_OVERHANG = 12;
 // Double-tapping a message reacts with this, like Instagram's double-tap to like.
 const LIKE_EMOJI = "❤️";
 const DOUBLE_TAP_MS = 280;
-
-function isVideoUrl(url: string) {
-  return /\.(mp4|mov|m4v|webm)(\?|$)/i.test(url);
-}
 
 function getReplySummary(message: ReplyMessage) {
   const text = message.text?.trim();
@@ -108,20 +102,15 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
       }, DOUBLE_TAP_MS);
     }
   };
-  const mediaUrls = item.mediaUrls?.length ? item.mediaUrls : item.mediaUrl ? [item.mediaUrl] : [];
-  const toMediaUri = (url: string) => (url.startsWith("http") || url.startsWith("file:") ? url : `${API_URL}${url}`);
-  const getMediaKind = (url: string, index: number): MediaKind => (
-    item.mediaTypes?.[index] || (isVideoUrl(url) ? "video" : "image")
-  );
 
   // Photos and videos sit on their own, with no bubble or frame around them.
   // Any caption (and the reply quote) goes in a gradient bubble attached right
   // below, at the same width, joined by nearly square corners (orange = you,
   // blue = others).
-  const hasMedia = mediaUrls.length > 0;
+  const mediaItems = messageMedia(item);
+  const hasMedia = mediaItems.length > 0;
   const hasText = !!item.text;
   const showBubble = hasText || !hasMedia;
-  const mediaItems = mediaUrls.map((url, index) => ({ uri: toMediaUri(url), type: getMediaKind(url, index) }));
   const replyPreview = item.replyTo && (
     <View style={[styles.replyPreview, showBubble ? styles.replyPreviewOnGradient : styles.replyPreviewPlain]}>
       <Text style={[styles.replyName, showBubble && styles.onGradientText]}>
@@ -190,6 +179,7 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
             <View style={{ alignItems: isMe ? "flex-end" : "flex-start" }}>
               {!showBubble && replyPreview}
               <ChatMedia
+                messageId={item.id}
                 items={mediaItems}
                 caption={showBubble ? textBubble : undefined}
                 onPress={(open) => handleTap(open)}

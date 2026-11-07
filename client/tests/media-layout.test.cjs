@@ -72,3 +72,51 @@ test('the progress bar maps a touch to a point in the video, within the bar', ()
   assert.equal(layout.seekFraction(500, 200), 1);
   assert.equal(layout.seekFraction(10, 0), 0);
 });
+
+test('a zoomed photo can only move as far as its edges', () => {
+  const size = { width: 400, height: 300 };
+  const window = { width: 400, height: 800 };
+  assert.deepEqual({ ...layout.panBounds(size, 1, window) }, { x: 0, y: 0 });
+  // 2x: 800 wide on a 400 wide screen, still shorter than the screen.
+  assert.deepEqual({ ...layout.panBounds(size, 2, window) }, { x: 200, y: 0 });
+  assert.deepEqual({ ...layout.panBounds(size, 4, window) }, { x: 600, y: 200 });
+});
+
+test('pinching past the limits slows down but keeps moving', () => {
+  assert.equal(layout.rubberBand(2, 1, 4), 2);
+  const below = layout.rubberBand(0.5, 1, 4);
+  assert.ok(below < 1 && below > 0.5);
+  const above = layout.rubberBand(6, 1, 4);
+  assert.ok(above > 4 && above < 6);
+  assert.ok(layout.rubberBand(8, 1, 4) > above);
+});
+
+test('zooming keeps the point under the fingers still', () => {
+  // Screen point of a photo point p: center + offset + scale * (p - center).
+  const center = 200;
+  const focal = 300;
+  const offset = 40;
+  const pointUnder = center + (focal - center - offset) / 2; // at 2x
+  const next = layout.zoomAround(offset, 2, 3, focal, center);
+  assert.equal(center + next + 3 * (pointUnder - center), focal);
+  assert.equal(layout.zoomAround(offset, 2, 2, focal, center), offset);
+});
+
+test('a zoomed photo resists being dragged past its edge, not back in', () => {
+  assert.equal(layout.dragWithin(0, 10, 100), 10);
+  assert.equal(layout.dragWithin(100, 10, 100), 100 + 10 * layout.EDGE_RESIST);
+  assert.equal(layout.dragWithin(100, -10, 100), 90);
+  assert.equal(layout.dragWithin(-100, -10, 100), -100 - 10 * layout.EDGE_RESIST);
+  // Not zoomed (bound 0): every drag resists.
+  assert.equal(layout.dragWithin(0, 10, 0), 10 * layout.EDGE_RESIST);
+});
+
+test('zoom settles inside its limits with no gap at the edges', () => {
+  const size = { width: 400, height: 300 };
+  const window = { width: 400, height: 800 };
+  assert.deepEqual({ ...layout.settleZoom({ scale: 0.8, x: 30, y: 20 }, size, window) }, { scale: 1, x: 0, y: 0 });
+  // 2x can move 200 sideways and not at all up or down.
+  assert.deepEqual({ ...layout.settleZoom({ scale: 2, x: 350, y: 50 }, size, window) }, { scale: 2, x: 200, y: 0 });
+  // Past the max comes back to it, pulled toward the center the same amount.
+  assert.deepEqual({ ...layout.settleZoom({ scale: 5, x: 500, y: 0 }, size, window) }, { scale: 4, x: 400, y: 0 });
+});

@@ -2,6 +2,7 @@ import { ReactNode, useMemo, useRef } from "react";
 import { Animated, PanResponder, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../context/ThemeContext";
+import { isMediaOverlayOpen } from "./mediaOverlay";
 
 // How far a message has to be dragged before letting go replies to it.
 const TRIGGER = 56;
@@ -26,7 +27,8 @@ export default function SwipeToReply({ children, onReply, enabled = true }: Prop
       Animated.spring(dragX, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
     };
     return PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_, g) => g.dx > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      onMoveShouldSetPanResponderCapture: (_, g) =>
+        !isMediaOverlayOpen() && g.dx > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
       onPanResponderMove: (_, g) => dragX.setValue(Math.max(0, Math.min(g.dx, MAX_DRAG))),
       onPanResponderTerminationRequest: () => false,
       onPanResponderRelease: (_, g) => {

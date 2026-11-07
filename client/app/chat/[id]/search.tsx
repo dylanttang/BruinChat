@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { apiFetch } from "../../../lib/api";
+import { requestMessageJump } from "../../../lib/messageJump";
 import { useTheme, fonts, Colors } from "../../../context/ThemeContext";
 
 type SearchMessage = {
@@ -75,6 +76,7 @@ export default function ChatSearch() {
   }, [id]);
 
   const openMessage = (message: SearchMessage) => {
+    requestMessageJump(message._id);
     if (message.threadRootId) {
       router.push(`/chat/${id}/thread/${message.threadRootId}`);
       return;

@@ -31,6 +31,7 @@ import { ChatMediaProvider } from "./chatMediaList";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { takeMessageJump } from "../../lib/messageJump";
+import { messageGrouping } from "../../lib/messageGroups";
 import { uploadToCloudinary } from "../../lib/cloudinary";
 import { mediaSizeError, MediaUploadError } from "../../lib/mediaPolicy";
 import { LIBRARY_MEDIA_OPTIONS, CAMERA_MEDIA_OPTIONS } from "../../lib/mediaPicker";
@@ -961,7 +962,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           }}
           scrollEventThrottle={16}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             if ("type" in item && item.type === "date") {
               return (
                 <View style={styles.dateSeparator}>
@@ -971,6 +972,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             }
             const msg = item as Message;
             const key = listKey(msg);
+            const grouping = messageGrouping(listItems, index);
             return (
               <MessageEntrance
                 animate={enteringKeysRef.current.has(key)}
@@ -1002,6 +1004,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                 onLongPress={msg.pending ? undefined : () => setActionTarget(msg)}
                 onReact={msg.pending ? undefined : (emoji) => reactToMessage(msg._id, emoji)}
                 onPressUser={() => setProfileUser(msg.senderId)}
+                groupedWithPrevious={grouping.withPrevious}
+                groupedWithNext={grouping.withNext}
               />
               </SwipeToReply>
               </MessageEntrance>

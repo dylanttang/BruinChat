@@ -79,7 +79,8 @@ export default function ChatSearch() {
       router.push(`/chat/${id}/thread/${message.threadRootId}`);
       return;
     }
-    router.push(`/chat/${id}`);
+    // Back to the chat already underneath, instead of opening a second copy.
+    router.dismissTo(`/chat/${id}`);
   };
 
   return (

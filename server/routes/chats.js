@@ -15,6 +15,9 @@ import { postingBlock } from '../utils/moderation.js';
 const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
 const CHAT_LIST_MAX_LIMIT = 50;
+const MESSAGE_SEARCH_DEFAULT_LIMIT = 20;
+const MESSAGE_SEARCH_MAX_LIMIT = 50;
+const MESSAGE_SEARCH_MAX_QUERY = 100;
 const MAX_REACTION_LENGTH = 16;
 const mediaLabelByType = {
   image: '[Photo]',
@@ -45,6 +48,28 @@ function parseLimit(value, defaultLimit, maxLimit) {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return defaultLimit;
   return Math.min(Math.max(parsed, 1), maxLimit);
+}
+
+// Escape user text before building a Mongo $regex so metacharacters are literal.
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function requireChatMember(chatId, userId) {
+  if (!mongoose.Types.ObjectId.isValid(chatId)) {
+    return { error: { status: 400, body: { error: 'Invalid chat ID' } } };
+  }
+  const chat = await Chat.findById(chatId).lean();
+  if (!chat) {
+    return { error: { status: 404, body: { error: 'Chat not found' } } };
+  }
+  const isMember = chat.members.some(
+    (memberId) => memberId.toString() === userId.toString()
+  );
+  if (!isMember) {
+    return { error: { status: 403, body: { error: 'You are not a member of this chat' } } };
+  }
+  return { chat };
 }
 
 function populateMessage(query, chatId) {
@@ -286,6 +311,51 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/chats/:id/messages/search — Search message text in a chat
+//
+// Query params:
+//   q      — search string (required; matched as a case-insensitive substring)
+//   limit  — max results (default 20, max 50)
+//
+// Only members can search. Deleted messages and messages from people the
+// caller blocked are omitted. User text is regex-escaped before matching.
+// ---------------------------------------------------------------------------
+router.get('/:id/messages/search', requireAuth, async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const access = await requireChatMember(chatId, req.user._id);
+    if (access.error) {
+      return res.status(access.error.status).json(access.error.body);
+    }
+
+    const rawQuery = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (!rawQuery) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+    if (rawQuery.length > MESSAGE_SEARCH_MAX_QUERY) {
+      return res.status(400).json({ error: `Search query must be at most ${MESSAGE_SEARCH_MAX_QUERY} characters` });
+    }
+
+    const limit = parseLimit(req.query.limit, MESSAGE_SEARCH_DEFAULT_LIMIT, MESSAGE_SEARCH_MAX_LIMIT);
+    const visibleSender = { $nin: req.user.blockedUsers || [] };
+    const messages = await populateMessage(
+      Message.find({
+        chatId,
+        deletedAt: null,
+        senderId: visibleSender,
+        text: { $regex: escapeRegex(rawQuery), $options: 'i' },
+      }).sort({ _id: -1 }).limit(limit),
+      chatId
+    ).lean();
+
+    res.json({ messages: messages.map(serializeMessage), query: rawQuery });
+  } catch (err) {
+    console.error('GET /api/chats/:id/messages/search error:', err);
+    res.status(500).json({ error: 'Failed to search messages' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/chats/:id/messages — Get messages in a chat (cursor-paginated)
 //
 // Query params:
@@ -298,23 +368,9 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
   try {
     const chatId = req.params.id;
 
-    // Validate chat ID format
-    if (!mongoose.Types.ObjectId.isValid(chatId)) {
-      return res.status(400).json({ error: 'Invalid chat ID' });
-    }
-
-    // Check chat exists
-    const chat = await Chat.findById(chatId).lean();
-    if (!chat) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-
-    // Check membership
-    const isMember = chat.members.some(
-      (memberId) => memberId.toString() === req.user._id.toString()
-    );
-    if (!isMember) {
-      return res.status(403).json({ error: 'You are not a member of this chat' });
+    const access = await requireChatMember(chatId, req.user._id);
+    if (access.error) {
+      return res.status(access.error.status).json(access.error.body);
     }
 
     // Pagination

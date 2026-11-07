@@ -27,9 +27,13 @@ import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "./MessageBubble";
 import SwipeToReply from "./SwipeToReply";
+import { ChatMediaProvider } from "./chatMediaList";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
+import { takeMessageJump } from "../../lib/messageJump";
 import { uploadToCloudinary } from "../../lib/cloudinary";
+import { mediaSizeError, MediaUploadError } from "../../lib/mediaPolicy";
+import { LIBRARY_MEDIA_OPTIONS, CAMERA_MEDIA_OPTIONS } from "../../lib/mediaPicker";
 import { startDirectMessage, conversationTitle } from "../../lib/directMessages";
 import { createSocket } from "../../lib/socket";
 import { confirmSent, isNewToList, receiveMessage } from "../../lib/sentMessages";
@@ -40,6 +44,12 @@ import EmojiPicker from "rn-emoji-keyboard";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
+// Older messages load in bigger pages when jumping to a search result.
+const JUMP_PAGE_SIZE = 100;
+// How long a jumped-to message stays highlighted before fading out.
+const JUMP_HIGHLIGHT_MS = 1200;
+const JUMP_SCROLL_RETRIES = 10;
+const JUMP_RETRY_DELAY_MS = 120;
 const TYPING_EVENT_TTL_MS = 3000;
 
 // Instagram-style send: the new bubble pops out of its bottom corner (from
@@ -376,6 +386,11 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [root, setRoot] = useState<Message | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  // The search result to scroll to, once it's in the list.
+  const [jumpTarget, setJumpTarget] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const highlightOpacity = useRef(new Animated.Value(0)).current;
+  const jumpRetriesRef = useRef(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -470,6 +485,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         setMessages(data.messages);
         setRoot(data.root ?? null);
         setHasMore(data.hasMore);
+        return { messages: data.messages as Message[], hasMore: data.hasMore as boolean };
       }
     } catch (err) {
       setError("Could not load this conversation. Tap to retry.");
@@ -479,9 +495,39 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     }
   }, [id, messagesUrl]);
 
+  const fetchOlder = useCallback(async (before: string, limit?: number) => {
+    const response = await apiFetch(`${messagesUrl}${threadId ? "&" : "?"}before=${before}${limit ? `&limit=${limit}` : ""}`);
+    if (!response.ok) throw new Error("Unable to load older messages");
+    const data = await response.json();
+    setMessages(prev => [...prev, ...data.messages.filter((m: Message) => !prev.some(existing => existing._id === m._id))]);
+    setHasMore(data.hasMore);
+    return { messages: data.messages as Message[], hasMore: data.hasMore as boolean };
+  }, [messagesUrl, threadId]);
+
   useFocusEffect(useCallback(() => {
-    loadData();
-  }, [loadData]));
+    const target = takeMessageJump();
+    let active = true;
+    loadData().then(async (loaded) => {
+      if (!target || !loaded || !active) return;
+      // Coming back reloads only the newest page, so go back until it's there.
+      setJumpTarget(target);
+      let page = loaded;
+      let found = page.messages.some(item => item._id === target);
+      setLoadingMore(true);
+      try {
+        while (!found && page.hasMore && page.messages.length && active) {
+          page = await fetchOlder(page.messages[page.messages.length - 1]._id, JUMP_PAGE_SIZE);
+          found = page.messages.some(item => item._id === target);
+        }
+      } catch {
+        setError("Could not load older messages. Try again.");
+      } finally {
+        setLoadingMore(false);
+        if (!found) setJumpTarget(null);
+      }
+    });
+    return () => { active = false; };
+  }, [loadData, fetchOlder]));
 
   const clearRemoteTypingUser = useCallback((userId: string) => {
     const timer = remoteTypingTimersRef.current[userId];
@@ -670,6 +716,23 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   );
   const listItems = useMemo(() => injectDateSeparators(visibleMessages), [visibleMessages]);
 
+  useEffect(() => {
+    if (!jumpTarget || !listRef.current) return;
+    const index = listItems.findIndex(item => item._id === jumpTarget);
+    if (index < 0) return;
+    setJumpTarget(null);
+    jumpRetriesRef.current = 0;
+    listRef.current.scrollToIndex({ index, viewPosition: 0.5 });
+    setHighlightedId(jumpTarget);
+    highlightOpacity.setValue(1);
+    Animated.sequence([
+      Animated.delay(JUMP_HIGHLIGHT_MS),
+      Animated.timing(highlightOpacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) setHighlightedId(null);
+    });
+  }, [jumpTarget, listItems, highlightOpacity]);
+
   const typingLabel = useMemo(() => {
     const names = typingUserIds.map((userId) => (
       chat?.members.find((member) => member._id === userId)?.displayName ?? "Someone"
@@ -745,7 +808,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       } else if (err?.code === "TERMS_REQUIRED") {
         router.replace("/auth/terms");
       } else {
-        Alert.alert("Failed to send", "Please try again.");
+        Alert.alert("Failed to send", err instanceof MediaUploadError ? err.message : "Please try again.");
       }
     } finally {
       setSending(false);
@@ -756,8 +819,9 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     const validMedia: PendingMedia[] = assets.flatMap((asset) => {
       const mediaType = asset.type === "video" ? "video" : asset.type === "image" ? "image" : null;
       if (!mediaType) return [];
-      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-        Alert.alert("File too large", "Images and videos must be 10MB or smaller.");
+      const sizeError = mediaSizeError(mediaType, asset.fileSize);
+      if (sizeError) {
+        Alert.alert("File too large", sizeError);
         return [];
       }
       return [{
@@ -779,15 +843,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      allowsMultipleSelection: true,
-      selectionLimit: 10,
-      orderedSelection: true,
-      quality: 0.85,
-    });
-
-    if (!result.canceled) addPickedMedia(result.assets);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync(LIBRARY_MEDIA_OPTIONS);
+      if (!result.canceled) addPickedMedia(result.assets);
+    } catch {
+      Alert.alert("Could not prepare media", "Please try again or choose a different photo or video.");
+    }
   };
 
   const takePhoto = async () => {
@@ -797,15 +858,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images", "videos"],
-      quality: 0.85,
-    });
-
-    if (!result.canceled) addPickedMedia(result.assets);
+    try {
+      const result = await ImagePicker.launchCameraAsync(CAMERA_MEDIA_OPTIONS);
+      if (!result.canceled) addPickedMedia(result.assets);
+    } catch {
+      Alert.alert("Could not prepare media", "Please try recording again.");
+    }
   };
 
   const openPhotoOptions = () => {
+    // Alert menus don't show on web, so go straight to the browser's file picker.
+    if (Platform.OS === "web") {
+      pickFromLibrary();
+      return;
+    }
     Alert.alert("Add media", undefined, [
       { text: "Photo & Video Library", onPress: pickFromLibrary },
       { text: "Camera", onPress: takePhoto },
@@ -835,9 +901,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           {threadId ? "Thread" : (chat ? conversationTitle(chat, currentUserId) : "Loading...")}
         </Text>
 
-        <TouchableOpacity accessibilityLabel="Conversation info" onPress={() => router.push(`/chat/${id}/info`)}>
-          <Text style={styles.menuDot}>•••</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {!threadId && (
+            <TouchableOpacity
+              accessibilityLabel="Search messages"
+              onPress={() => router.push(`/chat/${id}/search`)}
+              style={styles.headerAction}
+            >
+              <Text style={styles.searchIcon}>⌕</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity accessibilityLabel="Conversation info" onPress={() => router.push(`/chat/${id}/info`)}>
+            <Text style={styles.menuDot}>•••</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {threadId && root && !blockedIds.has(root.senderId?._id) && <View style={{ maxHeight: 240, borderBottomWidth: 1, borderColor: colors.border }}>
@@ -856,17 +933,14 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           </Text>
         </View>
       ) : (
+        <ChatMediaProvider messages={visibleMessages}>
         <FlatList
           ref={listRef}
           onEndReached={async () => {
             if (!hasMore || loadingMore || !messages.length) return;
             setLoadingMore(true);
             try {
-              const response = await apiFetch(`${messagesUrl}${threadId ? "&" : "?"}before=${messages[messages.length - 1]._id}`);
-              if (!response.ok) throw new Error("Unable to load older messages");
-              const data = await response.json();
-              setMessages(prev => [...prev, ...data.messages.filter((m: Message) => !prev.some(existing => existing._id === m._id))]);
-              setHasMore(data.hasMore);
+              await fetchOlder(messages[messages.length - 1]._id);
             } catch { setError("Could not load older messages. Try again."); }
             finally { setLoadingMore(false); }
           }}
@@ -874,6 +948,14 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           data={listItems}
           inverted
           keyExtractor={listKey}
+          extraData={highlightedId}
+          // Rows further up aren't measured yet, so get close and try again.
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            if (jumpRetriesRef.current >= JUMP_SCROLL_RETRIES) return;
+            jumpRetriesRef.current += 1;
+            listRef.current?.scrollToOffset({ offset: averageItemLength * index, animated: false });
+            setTimeout(() => listRef.current?.scrollToIndex({ index, viewPosition: 0.5 }), JUMP_RETRY_DELAY_MS);
+          }}
           onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
             scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
           }}
@@ -896,6 +978,9 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                 dimmed={!!msg.pending}
                 onEnter={(height) => handleRowEnter(key, height)}
               >
+              {msg._id === highlightedId && (
+                <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.jumpHighlight, { opacity: highlightOpacity }]} />
+              )}
               <SwipeToReply enabled={!msg.deletedAt && !msg.pending && !error} onReply={() => startReply(msg)}>
               <MessageBubble
                 item={{
@@ -923,6 +1008,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             );
           }}
         />
+        </ChatMediaProvider>
       )}
 
       {/* INPUT BAR */}
@@ -1148,6 +1234,25 @@ function makeStyles(colors: Colors) {
       textAlign: "center",
       paddingHorizontal: 12,
       color: colors.text,
+    },
+    jumpHighlight: {
+      backgroundColor: colors.brandSoft,
+      borderRadius: 12,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    headerAction: {
+      paddingVertical: 4,
+      paddingHorizontal: 2,
+    },
+    searchIcon: {
+      fontFamily: fonts.regular,
+      fontSize: 22,
+      color: colors.brand,
+      lineHeight: 22,
     },
     menuDot: {
       fontFamily: fonts.regular,

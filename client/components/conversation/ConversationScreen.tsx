@@ -20,6 +20,7 @@ import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "./MessageBubble";
 import SwipeToReply from "./SwipeToReply";
+import { ChatMediaProvider } from "./chatMediaList";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { uploadToCloudinary } from "../../lib/cloudinary";
@@ -640,6 +641,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           </Text>
         </View>
       ) : (
+        <ChatMediaProvider messages={visibleMessages}>
         <FlatList
           ref={listRef}
           onEndReached={async () => {
@@ -693,6 +695,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             );
           }}
         />
+        </ChatMediaProvider>
       )}
 
       {/* INPUT BAR */}

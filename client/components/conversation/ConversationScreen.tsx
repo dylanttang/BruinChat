@@ -36,6 +36,7 @@ import { confirmSent, isNewToList, receiveMessage } from "../../lib/sentMessages
 import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
 import ReportModal from "../../components/ReportModal";
+import EmojiPicker from "rn-emoji-keyboard";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
@@ -342,6 +343,26 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const emojiPickerTheme = useMemo(() => ({
+    backdrop: colors.overlay,
+    knob: colors.border,
+    container: colors.card,
+    header: colors.subtext,
+    skinTonesContainer: colors.inputBg,
+    category: {
+      icon: colors.mutedText,
+      iconActive: colors.brand,
+      container: colors.inputBg,
+      containerActive: colors.brandSoft,
+    },
+    search: {
+      background: colors.inputBg,
+      text: colors.text,
+      placeholder: colors.mutedText,
+      icon: colors.mutedText,
+    },
+    emoji: { selected: colors.brandSoft },
+  }), [colors]);
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -360,6 +381,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  // Message the full emoji picker (the "+" in the long-press menu) reacts to.
+  const [emojiPickerTarget, setEmojiPickerTarget] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
@@ -790,6 +813,16 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     ]);
   };
 
+  // Your current reaction on the long-pressed message. If it came from the
+  // full picker it isn't a quick option, so it goes first in the row; either
+  // way it's highlighted, and tapping it again removes it.
+  const myActionReaction = actionTarget?.reactions?.find(
+    (reaction) => getReactionUserId(reaction) === currentUserId
+  )?.emoji;
+  const actionReactionOptions = myActionReaction && !REACTION_OPTIONS.includes(myActionReaction)
+    ? [myActionReaction, ...REACTION_OPTIONS]
+    : REACTION_OPTIONS;
+
   return (
     <SafeAreaView style={styles.container}>
       {/* HEADER */}
@@ -899,10 +932,11 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             <Text style={styles.actionTime}>{formatDayAndTime(actionTarget.createdAt)}</Text>
             <View style={styles.actionTopRow}>
               <View style={styles.actionEmojiRow}>
-                {REACTION_OPTIONS.map((emoji) => (
+                {actionReactionOptions.map((emoji) => (
                   <TouchableOpacity
                     key={emoji}
-                    style={styles.actionEmojiButton}
+                    style={[styles.actionEmojiButton, emoji === myActionReaction && styles.actionEmojiButtonSelected]}
+                    accessibilityLabel={emoji === myActionReaction ? `Remove ${emoji} reaction` : `React with ${emoji}`}
                     onPress={() => {
                       reactToMessage(actionTarget._id, emoji);
                       setActionTarget(null);
@@ -911,6 +945,16 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                     <Text style={styles.actionEmoji}>{emoji}</Text>
                   </TouchableOpacity>
                 ))}
+                <TouchableOpacity
+                  style={styles.actionEmojiButton}
+                  accessibilityLabel="More reactions"
+                  onPress={() => {
+                    setEmojiPickerTarget(actionTarget);
+                    setActionTarget(null);
+                  }}
+                >
+                  <Text style={styles.actionEmojiMore}>+</Text>
+                </TouchableOpacity>
               </View>
               <TouchableOpacity style={styles.actionCloseButton} onPress={() => setActionTarget(null)}>
                 <Text style={styles.actionCloseText}>×</Text>
@@ -1061,6 +1105,17 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         onBlockedChange={handleBlockedChange}
       />
       <ReportModal target={reportTarget} onClose={() => setReportTarget(null)} />
+      <EmojiPicker
+        open={!!emojiPickerTarget}
+        onClose={() => setEmojiPickerTarget(null)}
+        onEmojiSelected={({ emoji }) => {
+          if (emojiPickerTarget) reactToMessage(emojiPickerTarget._id, emoji);
+        }}
+        enableSearchBar
+        enableRecentlyUsed
+        categoryPosition="top"
+        theme={emojiPickerTheme}
+      />
     </SafeAreaView>
   );
 }
@@ -1277,9 +1332,19 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.inputBg,
       marginRight: 4,
     },
+    actionEmojiButtonSelected: {
+      borderWidth: 1.5,
+      borderColor: colors.brand,
+      backgroundColor: colors.brandSoft,
+    },
     actionEmoji: {
       fontFamily: fonts.regular,
       fontSize: 16,
+    },
+    actionEmojiMore: {
+      fontFamily: fonts.medium,
+      fontSize: 18,
+      color: colors.mutedText,
     },
     actionReplyButton: {
       flex: 1,

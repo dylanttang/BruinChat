@@ -91,6 +91,13 @@ export default function ChatInfo() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => router.push(`/chat/${id}/search`)}
+        >
+          <Text style={styles.searchButtonText}>Search messages</Text>
+        </TouchableOpacity>
+
         {/* Course Details (if this is a course chat) */}
         {chat.course && (
           <View style={styles.card}>
@@ -196,6 +203,20 @@ function makeStyles(colors: Colors) {
     },
     content: {
       padding: 16,
+    },
+    searchButton: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      paddingVertical: 14,
+      alignItems: "center",
+      marginBottom: 16,
+    },
+    searchButtonText: {
+      fontFamily: fonts.medium,
+      fontSize: 16,
+      color: colors.brand,
     },
     card: {
       borderRadius: 16,

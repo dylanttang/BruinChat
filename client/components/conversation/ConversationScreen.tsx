@@ -27,6 +27,7 @@ import type { Socket } from "socket.io-client";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "./MessageBubble";
 import SwipeToReply from "./SwipeToReply";
+import { ChatMediaProvider } from "./chatMediaList";
 import { apiFetch } from "../../lib/api";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { uploadToCloudinary } from "../../lib/cloudinary";
@@ -783,6 +784,11 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   };
 
   const openPhotoOptions = () => {
+    // Alert menus don't show on web, so go straight to the browser's file picker.
+    if (Platform.OS === "web") {
+      pickFromLibrary();
+      return;
+    }
     Alert.alert("Add media", undefined, [
       { text: "Photo & Video Library", onPress: pickFromLibrary },
       { text: "Camera", onPress: takePhoto },
@@ -823,6 +829,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           </Text>
         </View>
       ) : (
+        <ChatMediaProvider messages={visibleMessages}>
         <FlatList
           ref={listRef}
           onEndReached={async () => {
@@ -890,6 +897,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             );
           }}
         />
+        </ChatMediaProvider>
       )}
 
       {/* INPUT BAR */}

@@ -13,14 +13,15 @@ import {
   useWindowDimensions,
   type ViewStyle,
 } from "react-native";
-import { ResizeMode, Video } from "expo-av";
+import { useEventListener } from "expo";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { BlurView } from "expo-blur";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fonts } from "../../context/ThemeContext";
 import { Rect, formatDuration, resistDrag, seekFraction, swipeTarget, viewerRect, zoomFrom } from "../../lib/mediaLayout";
-import MediaPreview, { MediaItem, reportVideoDuration, reportVideoSize, useMediaRatio, useVideoDuration } from "./MediaPreview";
+import MediaPreview, { MediaItem, reportVideoDuration, useMediaRatio, useVideoDuration } from "./MediaPreview";
 
 const OPEN_MS = 300;
 const CLOSE_MS = 260;
@@ -273,51 +274,77 @@ function ViewerPage({ item, left, current, origin, window, progress, pan, wasSwi
 // bottom: play/pause on the left, drag anywhere on the bar to jump there, and
 // the video's length on the right.
 function ViewerVideo({ uri, wasSwipe }: { uri: string; wasSwipe: () => boolean }) {
-  const videoRef = useRef<Video>(null);
-  const knownDuration = useVideoDuration(uri);
+  // The player is released when this unmounts, which stops the video.
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    // expo-video times are in seconds; this updates the bar 4 times a second.
+    p.timeUpdateEventInterval = 0.25;
+    // Plays with sound even when the phone is on silent, and pauses other
+    // apps' music while it plays (Android: takes audio focus).
+    p.audioMixingMode = "auto";
+  });
+  // This player already knows the length, so don't load it a second time.
+  const knownDuration = useVideoDuration(uri, false);
+  // Times here are in milliseconds, like the rest of the media code.
   const [playback, setPlayback] = useState({ position: 0, duration: 0, playing: true });
   // While dragging the bar: where it's being dragged to, in milliseconds.
   const [scrubbing, setScrubbing] = useState<number | null>(null);
   const resumeAfterScrub = useRef(false);
   const lastSeek = useRef(0);
 
+  const readDuration = () => {
+    const ms = player.duration * 1000;
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    reportVideoDuration(uri, ms);
+    setPlayback((current) => ({ ...current, duration: ms }));
+  };
+
+  // Start playing once mounted. On web, play() only reaches a <video> that is
+  // already on the page, so it can't go in the useVideoPlayer setup.
+  useEffect(() => {
+    player.play();
+    // In case it was ready before the listeners below were attached.
+    if (player.status === "readyToPlay") readDuration();
+  }, [player]);
+
+  useEventListener(player, "playingChange", ({ isPlaying }) => {
+    setPlayback((current) => ({ ...current, playing: isPlaying }));
+  });
+  useEventListener(player, "timeUpdate", ({ currentTime }) => {
+    setPlayback((current) => ({ ...current, position: currentTime * 1000 }));
+  });
+  useEventListener(player, "statusChange", ({ status }) => {
+    if (status === "readyToPlay") readDuration();
+  });
+
   const duration = playback.duration || knownDuration || 0;
   const position = scrubbing ?? playback.position;
 
   const toggle = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (playback.playing) video.pauseAsync().catch(() => {});
-    else video.playAsync().catch(() => {});
+    if (playback.playing) player.pause();
+    else player.play();
   };
 
-  const seekTo = (ms: number, exact: boolean) => {
-    const tolerance = exact ? 0 : 250;
-    return videoRef.current
-      ?.setPositionAsync(ms, { toleranceMillisBefore: tolerance, toleranceMillisAfter: tolerance })
-      .catch(() => {});
+  // expo-video always seeks to the exact time.
+  const seekTo = (ms: number) => {
+    player.currentTime = ms / 1000;
   };
 
   return (
     <>
-      <Video
-        ref={videoRef}
-        source={{ uri }}
+      <VideoView
+        player={player}
         style={StyleSheet.absoluteFill}
-        resizeMode={ResizeMode.CONTAIN}
-        shouldPlay
-        isLooping
-        progressUpdateIntervalMillis={250}
-        onReadyForDisplay={(event) => reportVideoSize(uri, event)}
-        onPlaybackStatusUpdate={(status) => {
-          if (!status.isLoaded) return;
-          reportVideoDuration(uri, status.durationMillis);
-          setPlayback({
-            position: status.positionMillis,
-            duration: status.durationMillis ?? 0,
-            playing: status.isPlaying,
-          });
-        }}
+        contentFit="contain"
+        // The bar below and the tap-to-pause layer are the controls.
+        nativeControls={false}
+        fullscreenOptions={{ enable: false }}
+        allowsPictureInPicture={false}
+        // iOS shows a Live Text button on paused frames, over the length.
+        allowsVideoFrameAnalysis={false}
+        // Android: a TextureView follows the rounded corners and the zoom
+        // animation. It can't change after mounting.
+        surfaceType="textureView"
       />
 
       {/* Tapping the video pauses or plays it. */}
@@ -353,7 +380,7 @@ function ViewerVideo({ uri, wasSwipe }: { uri: string; wasSwipe: () => boolean }
           fraction={duration ? position / duration : 0}
           onScrubStart={() => {
             resumeAfterScrub.current = playback.playing;
-            videoRef.current?.pauseAsync().catch(() => {});
+            player.pause();
           }}
           onScrub={(fraction) => {
             const ms = fraction * duration;
@@ -362,16 +389,15 @@ function ViewerVideo({ uri, wasSwipe }: { uri: string; wasSwipe: () => boolean }
             const now = Date.now();
             if (now - lastSeek.current > 80) {
               lastSeek.current = now;
-              seekTo(ms, false);
+              seekTo(ms);
             }
           }}
           onScrubEnd={(fraction) => {
             const ms = fraction * duration;
             setPlayback((current) => ({ ...current, position: ms }));
             setScrubbing(null);
-            Promise.resolve(seekTo(ms, true)).then(() => {
-              if (resumeAfterScrub.current) videoRef.current?.playAsync().catch(() => {});
-            });
+            seekTo(ms);
+            if (resumeAfterScrub.current) player.play();
           }}
         />
         <Text style={styles.time}>{formatDuration(duration)}</Text>

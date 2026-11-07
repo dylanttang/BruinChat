@@ -34,6 +34,11 @@ type Props = {
   onReact?: (emoji: string) => void;
   // Tapping the sender's picture or name opens their profile sheet.
   onPressUser?: () => void;
+  // Same sender as the message above or below. Like Instagram, a run of
+  // messages sits close together, with the name on the first and the picture
+  // on the last.
+  groupedWithPrevious?: boolean;
+  groupedWithNext?: boolean;
 };
 
 // How far the reaction pills hang below the bubble. The pills are ~25px tall,
@@ -57,7 +62,9 @@ function getReplySummary(message: ReplyMessage) {
   return mediaCount > 1 ? `[${mediaCount} ${label}s]` : `[${label}]`;
 }
 
-export default function MessageBubble({ item, onLongPress, onReact, onPressUser, onOpenThread, replyCount = 0 }: Props) {
+export default function MessageBubble({
+  item, onLongPress, onReact, onPressUser, onOpenThread, replyCount = 0, groupedWithPrevious = false, groupedWithNext = false,
+}: Props) {
   const isMe = item.mine;
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -133,6 +140,7 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
         styles.bubble,
         isMe ? styles.myBubble : styles.otherBubble,
         hasMedia ? styles.captionBubble : { alignSelf: isMe ? "flex-end" : "flex-start" },
+        !hasMedia && groupedWithPrevious && (isMe ? styles.myGroupedBubble : styles.otherGroupedBubble),
       ]}
     >
       {replyPreview}
@@ -150,16 +158,23 @@ export default function MessageBubble({ item, onLongPress, onReact, onPressUser,
         activeOpacity={0.8}
         onPress={() => handleTap()}
         onLongPress={onLongPress}
-        style={[styles.row, { justifyContent: isMe ? "flex-end" : "flex-start" }]}
+        style={[
+          styles.row,
+          { justifyContent: isMe ? "flex-end" : "flex-start" },
+          groupedWithPrevious && styles.rowJoinedAbove,
+          groupedWithNext && styles.rowJoinedBelow,
+        ]}
       >
-        {!isMe && (
+        {!isMe && (groupedWithNext ? (
+          <View style={styles.avatarSpace} />
+        ) : (
           <TouchableOpacity onPress={onPressUser} disabled={!onPressUser} accessibilityLabel={`Open ${item.user}'s profile`}>
             <Image source={item.avatarUrl ? { uri: item.avatarUrl } : undefined} style={styles.avatar} />
           </TouchableOpacity>
-        )}
+        ))}
 
         <View style={{ maxWidth: "75%" }}>
-          {!isMe && (
+          {!isMe && !groupedWithPrevious && (
             <Text style={styles.username} onPress={onPressUser} suppressHighlighting>
               {item.user}
             </Text>
@@ -282,12 +297,22 @@ function makeStyles(colors: Colors) {
       marginVertical: 6,
       paddingHorizontal: 8,
     },
+    rowJoinedAbove: {
+      marginTop: 1,
+    },
+    rowJoinedBelow: {
+      marginBottom: 1,
+    },
     avatar: {
       width: 34,
       height: 34,
       borderRadius: 17,
       backgroundColor: colors.avatarBg,
       marginRight: 8,
+    },
+    // Keeps grouped messages lined up where the picture would be.
+    avatarSpace: {
+      width: 42,
     },
     username: {
       fontFamily: fonts.regular,
@@ -313,6 +338,12 @@ function makeStyles(colors: Colors) {
     },
     otherBubble: {
       borderBottomLeftRadius: 6,
+    },
+    myGroupedBubble: {
+      borderTopRightRadius: 6,
+    },
+    otherGroupedBubble: {
+      borderTopLeftRadius: 6,
     },
     messageText: {
       fontFamily: fonts.regular,

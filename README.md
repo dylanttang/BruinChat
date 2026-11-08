@@ -82,7 +82,14 @@ NODE_PATH=server/node_modules node scripts/fetchCourses.js --term 26F           
 - **API:** Railway project `bchat-api` (bchatdevx account), built from the root `Dockerfile`. Environment variables live in Railway's Variables tab. Production: https://api-production-7bc9.up.railway.app
 - **iOS:** EAS builds (`client/eas.json`, `production` profile) are submitted to TestFlight / App Store Connect.
 - **App Review sign-in:** Apple's reviewers can't use UCLA accounts. While a build is in review, set `REVIEW_LOGIN_ENABLED=true` in Railway and give Apple the review email and password. Turn it **off** with `REVIEW_LOGIN_ENABLED=false` afterwards. Don't delete `REVIEW_LOGIN_EMAIL`; the server uses it to recognize the review account.
-- **New quarter:** load the term with `fetchCourses.js`, then set `CURRENT_TERM` in Railway.
+- **New quarter:** load the term with `fetchCourses.js`, then set `CURRENT_TERM` in Railway. Then clear out the old quarter's class chats (e.g. moving to 26F, archive 26S):
+
+  ```bash
+  NODE_PATH=server/node_modules node scripts/archiveTerm.js --term 26S           # dry run: prints what would be deleted
+  NODE_PATH=server/node_modules node scripts/archiveTerm.js --term 26S --apply   # backs up, then deletes
+  ```
+
+  This deletes the term's class chats, their messages and photos/videos, and removes the old courses from everyone's class list. DMs and other chats without a course are untouched. It only archives quarters before `CURRENT_TERM` (read from `server/.env`), so make sure that matches Railway; it refuses to run if it's missing. Before deleting, it writes a JSON backup to `~/bchat-backups` (change with `--backup-dir`, which must be outside the repo since it holds real messages) and reads it back to check it before deleting anything. Keep that file somewhere safe. Try it on a dev database first.
 
 ## Repo Layout
 
@@ -98,7 +105,7 @@ server/      # Express API + Socket.io
   utils/       # auth, sockets, media, moderation, push, review login, ...
   tests/       # node --test suites (run by CI)
 models/      # Mongoose schemas (shared by server + scripts)
-scripts/     # fetchCourses.js (SOC scraper), seed.js, syncLegal.js
+scripts/     # fetchCourses.js (SOC scraper), archiveTerm.js (end-of-quarter cleanup), seed.js, syncLegal.js
 docs/        # legal text, security notes
 .github/     # CI workflow, PR template
 ```

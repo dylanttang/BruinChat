@@ -41,7 +41,7 @@ import { confirmSent, isNewToList, receiveMessage } from "../../lib/sentMessages
 import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
 import ReportModal from "../../components/ReportModal";
-import EmojiPicker from "rn-emoji-keyboard";
+import ReactionEmojiPicker from "./ReactionEmojiPicker";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
@@ -354,26 +354,6 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const emojiPickerTheme = useMemo(() => ({
-    backdrop: colors.overlay,
-    knob: colors.border,
-    container: colors.card,
-    header: colors.subtext,
-    skinTonesContainer: colors.inputBg,
-    category: {
-      icon: colors.mutedText,
-      iconActive: colors.brand,
-      container: colors.inputBg,
-      containerActive: colors.brandSoft,
-    },
-    search: {
-      background: colors.inputBg,
-      text: colors.text,
-      placeholder: colors.mutedText,
-      icon: colors.mutedText,
-    },
-    emoji: { selected: colors.brandSoft },
-  }), [colors]);
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -1195,16 +1175,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         onBlockedChange={handleBlockedChange}
       />
       <ReportModal target={reportTarget} onClose={() => setReportTarget(null)} />
-      <EmojiPicker
+      <ReactionEmojiPicker
         open={!!emojiPickerTarget}
         onClose={() => setEmojiPickerTarget(null)}
-        onEmojiSelected={({ emoji }) => {
+        onSelect={(emoji) => {
           if (emojiPickerTarget) reactToMessage(emojiPickerTarget._id, emoji);
         }}
-        enableSearchBar
-        enableRecentlyUsed
-        categoryPosition="top"
-        theme={emojiPickerTheme}
       />
     </SafeAreaView>
   );

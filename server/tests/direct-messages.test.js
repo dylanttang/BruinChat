@@ -98,3 +98,14 @@ test('blocks also prevent DM reactions and edits', async () => {
   assert.equal((await request(`/api/chats/${chatId}/messages/${messageId}/react`, { method: 'POST', headers, body: { emoji: '❤️' } })).status, 403);
   assert.equal((await request(`/api/chats/${chatId}/messages/${messageId}`, { method: 'PUT', headers, body: { text: 'Edit' } })).status, 403);
 });
+test('chat list includes who sent the last visible message and when, for unread dots', async () => {
+  const sentAt = new Date('2026-11-09T12:00:00.000Z');
+  Chat.find = query => { listQuery = query; return chain([{ _id: chatId, name: 'Chat', isGroup: true, members: [], lastMessageAt: sentAt }]); };
+  Message.aggregate = async () => [{ _id: chatId, text: 'hi', senderId: otherId, createdAt: sentAt }];
+  const res = await request('/api/chats?kind=group', { headers });
+  assert.equal(res.status, 200);
+  const [chat] = res.data.chats;
+  assert.equal(chat.lastMessageSenderId, otherId);
+  assert.equal(chat.lastMessageCreatedAt, sentAt.toISOString());
+  assert.equal(chat.lastMessageText, 'hi');
+});

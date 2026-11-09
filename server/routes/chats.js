@@ -158,6 +158,7 @@ router.get('/', requireAuth, async (req, res) => {
           mediaUrls: { $first: '$mediaUrls' },
           mediaTypes: { $first: '$mediaTypes' },
           senderId: { $first: '$senderId' },
+          createdAt: { $first: '$createdAt' },
         },
       },
     ]);
@@ -171,6 +172,10 @@ router.get('/', requireAuth, async (req, res) => {
         latestByChat[c._id.toString()]?.mediaUrls?.length
           ? getMessageMediaLabel(latestByChat[c._id.toString()])
           : null),
+      // The app uses these to show unread chats; they skip blocked senders,
+      // unlike lastMessageAt.
+      lastMessageSenderId: latestByChat[c._id.toString()]?.senderId?.toString() ?? null,
+      lastMessageCreatedAt: latestByChat[c._id.toString()]?.createdAt ?? null,
     }));
 
     res.json({

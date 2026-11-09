@@ -42,6 +42,7 @@ import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
 import ReportModal from "../../components/ReportModal";
 import ReactionEmojiPicker from "./ReactionEmojiPicker";
+import { markChatSeen, newestMessageAt } from "../../lib/readState";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
@@ -460,6 +461,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       if (chatRes.ok) {
         const data = await chatRes.json();
         setChat(data.chat);
+        // Opening the chat counts as seeing everything in it, thread replies included.
+        if (data.chat?.lastMessageAt) markChatSeen(id, data.chat.lastMessageAt);
       }
       if (msgsRes.ok) {
         const data = await msgsRes.json();
@@ -696,6 +699,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     [messages, blockedIds]
   );
   const listItems = useMemo(() => injectDateSeparators(visibleMessages), [visibleMessages]);
+
+  // Messages that arrive while the chat is open count as seen too.
+  useEffect(() => {
+    const newest = newestMessageAt(messages);
+    if (newest) markChatSeen(id, newest);
+  }, [id, messages]);
 
   useEffect(() => {
     if (!jumpTarget || !listRef.current) return;

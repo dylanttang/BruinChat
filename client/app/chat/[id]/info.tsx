@@ -39,6 +39,7 @@ export default function ChatInfo() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -61,6 +62,42 @@ export default function ChatInfo() {
       else next.delete(userId);
       return next;
     });
+  };
+
+  const leaveClass = async (courseId: string) => {
+    setLeaving(true);
+    try {
+      // Leaving a class chat means dropping the class; the server removes the
+      // user from the chat when the course leaves their list.
+      const meResponse = await apiFetch("/api/users/me");
+      if (!meResponse.ok) throw new Error("Could not load your classes");
+      const { user } = await meResponse.json();
+      const courseIds = (user?.courses ?? [])
+        .map((course: { _id: string } | string) => (typeof course === "string" ? course : course._id))
+        .filter((otherId: string) => otherId !== courseId);
+      const response = await apiFetch("/api/users/me/courses", {
+        method: "PUT",
+        body: JSON.stringify({ courseIds }),
+      });
+      if (!response.ok) throw new Error("Could not leave class");
+      router.dismissTo("/tabs/home");
+    } catch {
+      Alert.alert("Could not leave class", "Please try again.");
+      setLeaving(false);
+    }
+  };
+
+  const confirmLeave = () => {
+    if (!chat?.course) return;
+    const course = chat.course;
+    Alert.alert(
+      `Leave ${course.subjectArea.trim()} ${course.number}?`,
+      "You'll be removed from this class chat. You can rejoin by adding the class again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Leave", style: "destructive", onPress: () => leaveClass(course._id) },
+      ]
+    );
   };
 
   if (loading) {
@@ -144,16 +181,25 @@ export default function ChatInfo() {
           })}
         </View>
 
-        {/* Leave Button */}
-        <TouchableOpacity style={styles.leaveButton} onPress={chat.isGroup === false ? async () => {
-          try {
-            const response = await apiFetch(`/api/chats/${id}/archive`, { method: "PUT", body: JSON.stringify({ archive: true }) });
-            if (!response.ok) throw new Error("Could not archive conversation");
-            router.replace("/direct");
-          } catch { Alert.alert("Could not archive conversation", "Please try again."); }
-        } : undefined}>
-          <Text style={styles.leaveText}>{chat.isGroup === false ? "Archive conversation" : "Leave"}</Text>
-        </TouchableOpacity>
+        {/* DMs can be archived; class chats can be left. Other group chats have neither. */}
+        {chat.isGroup === false && (
+          <TouchableOpacity style={styles.leaveButton} onPress={async () => {
+            try {
+              const response = await apiFetch(`/api/chats/${id}/archive`, { method: "PUT", body: JSON.stringify({ archive: true }) });
+              if (!response.ok) throw new Error("Could not archive conversation");
+              router.replace("/direct");
+            } catch { Alert.alert("Could not archive conversation", "Please try again."); }
+          }}>
+            <Text style={styles.leaveText}>Archive conversation</Text>
+          </TouchableOpacity>
+        )}
+        {chat.course && (
+          <TouchableOpacity style={styles.leaveButton} onPress={confirmLeave} disabled={leaving}>
+            {leaving
+              ? <ActivityIndicator color={colors.danger} />
+              : <Text style={styles.leaveText}>Leave class</Text>}
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       <UserProfileSheet

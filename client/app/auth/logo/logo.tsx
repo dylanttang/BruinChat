@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { Image, Text, StyleSheet } from "react-native";
+import { Image, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { useTheme, fonts } from "../../../context/ThemeContext";
+import { useTheme } from "../../../context/ThemeContext";
 import { resolveSignedInRoute } from "../../../lib/session";
 
 export default function Logo() {
@@ -24,7 +24,6 @@ export default function Logo() {
 
   return (
     <LinearGradient colors={colors.gradients.backdrop} style={styles.container}>
-      <Text style={[styles.wordmark, { color: colors.brand }]}>BChat</Text>
       <Image
         source={require("../../../src/assets/splash-icon.png")}
         style={styles.icon}
@@ -39,11 +38,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  wordmark: {
-    fontFamily: fonts.bold,
-    fontSize: 40,
-    marginBottom: 16,
   },
   icon: {
     width: 120,

@@ -74,9 +74,9 @@ export default function Profile() {
     setCourseScrollY(event.nativeEvent.contentOffset.y);
   };
 
+  // Refresh on every visit, but keep what's on screen instead of blanking it.
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
       Promise.all([
         apiFetch("/api/users/me").then((res) => (res.ok ? res.json() : null)),
         apiFetch("/api/users/me/stats").then((res) => (res.ok ? res.json() : null)),

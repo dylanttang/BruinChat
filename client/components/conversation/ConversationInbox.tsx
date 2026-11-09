@@ -12,9 +12,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, onSessionChanged } from "../../lib/api";
+import { loadReadState, clearReadState, isChatUnread } from "../../lib/readState";
 import GradientButton from "../GradientButton";
 import { startDirectMessage, conversationTitle } from "../../lib/directMessages";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
@@ -27,8 +28,26 @@ type Chat = {
   isGroup?: boolean;
   lastMessageAt: string | null;
   lastMessageText: string | null;
+  lastMessageSenderId?: string | null;
+  lastMessageCreatedAt?: string | null;
   members: { _id: string; displayName: string }[];
 };
+
+type InboxCache = {
+  chats: Chat[];
+  hasMore: boolean;
+  nextCursor: string | null;
+  currentUserId: string | null;
+};
+
+// The last list shown for each inbox, so switching tabs shows it right away
+// while a fresh copy loads in the background.
+const inboxCache: { group?: InboxCache; direct?: InboxCache } = {};
+onSessionChanged(() => {
+  delete inboxCache.group;
+  delete inboxCache.direct;
+  clearReadState();
+});
 
 function formatTime(iso: string | null): string {
   if (!iso) return "";
@@ -58,16 +77,21 @@ export default function ConversationInbox({ direct = false }: { direct?: boolean
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
+  const kind = direct ? "direct" : "group";
+  const cached = inboxCache[kind];
+
   const [username, setUsername] = useState("");
   const [starting, setStarting] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(cached?.currentUserId ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [chats, setChats] = useState<Chat[]>(cached?.chats ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
+  const [nextCursor, setNextCursor] = useState<string | null>(cached?.nextCursor ?? null);
+  const [readState, setReadState] = useState<Awaited<ReturnType<typeof loadReadState>> | null>(null);
+  const loadedRef = useRef(!!cached);
 
   const loadChats = useCallback(async (
     { reset = true, before = null }: { reset?: boolean; before?: string | null } = {}
@@ -91,16 +115,24 @@ export default function ConversationInbox({ direct = false }: { direct?: boolean
       });
       setHasMore(!!data.hasMore);
       setNextCursor(data.nextCursor ?? null);
+      loadedRef.current = true;
     } catch (err) {
       setError("Could not load conversations. Pull to refresh or tap here to retry.");
       console.error("Failed to fetch chats:", err);
     }
   }, [direct]);
 
+  useEffect(() => {
+    if (loadedRef.current) inboxCache[kind] = { chats, hasMore, nextCursor, currentUserId };
+  }, [kind, chats, hasMore, nextCursor, currentUserId]);
+
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
+      // Only show the spinner the first time; after that, keep the list on
+      // screen and refresh it quietly.
+      if (!loadedRef.current) setLoading(true);
       loadChats().finally(() => setLoading(false));
+      loadReadState().then((state) => setReadState({ ...state }));
     }, [loadChats])
   );
 
@@ -184,10 +216,14 @@ export default function ConversationInbox({ direct = false }: { direct?: boolean
               </View>
             ) : null
           }
-          renderItem={({ item, index }) => (
+          extraData={readState}
+          renderItem={({ item, index }) => {
+            const unread = isChatUnread(item, readState, currentUserId);
+            return (
             <TouchableOpacity
               style={styles.chatRow}
               onPress={() => router.push(`/chat/${item._id}`)}
+              accessibilityLabel={unread ? `${conversationTitle(item, currentUserId)}, unread` : undefined}
             >
               <LinearGradient
                 colors={index % 2 === 0 ? colors.gradients.received : colors.gradients.sent}
@@ -197,15 +233,19 @@ export default function ConversationInbox({ direct = false }: { direct?: boolean
               </LinearGradient>
 
               <View style={styles.chatText}>
-                <Text style={styles.chatName} numberOfLines={1}>{conversationTitle(item, currentUserId)}</Text>
-                <Text style={styles.lastMessage} numberOfLines={1}>
+                <Text style={[styles.chatName, unread && styles.chatNameUnread]} numberOfLines={1}>{conversationTitle(item, currentUserId)}</Text>
+                <Text style={[styles.lastMessage, unread && styles.lastMessageUnread]} numberOfLines={1}>
                   {item.lastMessageText ?? "No messages yet"}
                 </Text>
               </View>
 
-              <Text style={styles.time}>{formatTime(item.lastMessageAt)}</Text>
+              <View style={styles.meta}>
+                <Text style={[styles.time, unread && styles.timeUnread]}>{formatTime(item.lastMessageAt)}</Text>
+                {unread && <View style={styles.unreadDot} />}
+              </View>
             </TouchableOpacity>
-          )}
+            );
+          }}
         />
       )}
     </SafeAreaView>
@@ -283,16 +323,37 @@ function makeStyles(colors: Colors) {
       fontFamily: fonts.medium,
       color: colors.text,
     },
+    chatNameUnread: {
+      fontFamily: fonts.bold,
+    },
     lastMessage: {
       fontFamily: fonts.regular,
       fontSize: 14,
       color: colors.subtext,
       marginTop: 2,
     },
+    lastMessageUnread: {
+      fontFamily: fonts.medium,
+      color: colors.text,
+    },
+    meta: {
+      alignItems: "flex-end",
+      gap: 6,
+      marginLeft: 8,
+    },
     time: {
       fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
+    },
+    timeUnread: {
+      color: colors.brand,
+    },
+    unreadDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: colors.brand,
     },
     emptyState: {
       flex: 1,

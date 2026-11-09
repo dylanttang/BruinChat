@@ -125,6 +125,19 @@ async function main() {
   console.log(`Photos/videos to delete: ${media.length}`);
   console.log(`Users to update:         ${users.length}`);
 
+  // Without Cloudinary keys the media deletes are skipped silently, which
+  // would leave the files behind with nothing in the database pointing at them.
+  const hasCloudinaryKeys = process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET;
+  if (media.length > 0 && !hasCloudinaryKeys) {
+    const message = 'CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET must be set in server/.env to delete the photos/videos.';
+    if (apply) {
+      console.error(`\nRefusing to run: ${message}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.warn(`\nWarning: ${message} --apply will refuse until they are.`);
+  }
+
   if (!apply) {
     console.log('\nDry run only. Re-run with --apply to back up and delete.');
     return;

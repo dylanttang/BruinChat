@@ -12,7 +12,9 @@ const messageSchema = new mongoose.Schema(
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     // Chat members @mentioned in the text. They get a notification even with
     // class or reply notifications off.
-    mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // Left unset (not []) when there are none, so saving an older message
+    // doesn't add an empty list to it.
+    mentions: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: undefined },
     reactions: [
       {
         emoji: { type: String, required: true, trim: true, maxlength: 16 },

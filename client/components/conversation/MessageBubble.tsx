@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { messageMedia, type MediaKind } from "../../lib/messageMedia";
+import type { Rect } from "../../lib/mediaLayout";
 import ChatMedia from "./ChatMedia";
 
 type ReplyMessage = {
@@ -28,7 +29,8 @@ type Props = {
     // names: who reacted with this emoji ("You" first), for the reactions sheet.
     reactions?: { emoji: string; count: number; reactedByMe: boolean; names: string[] }[];
   };
-  onLongPress?: () => void;
+  // Gets where the message is on screen, so the long-press menu can show it in place.
+  onLongPress?: (rect: Rect | null) => void;
   replyCount?: number;
   onOpenThread?: () => void;
   onReact?: (emoji: string) => void;
@@ -76,6 +78,16 @@ export default function MessageBubble({
   const [showReactions, setShowReactions] = useState(false);
   const hasReactions = !!item.reactions?.length;
   const hasMyReaction = !!item.reactions?.some((r) => r.reactedByMe);
+
+  const rowRef = useRef<View>(null);
+  const handleLongPress = onLongPress && (() => {
+    const row = rowRef.current;
+    if (!row) {
+      onLongPress(null);
+      return;
+    }
+    row.measureInWindow((x, y, width, height) => onLongPress(width && height ? { x, y, width, height } : null));
+  });
 
   const lastTapRef = useRef(0);
   const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,9 +172,10 @@ export default function MessageBubble({
   return (
     <>
       <TouchableOpacity
+        ref={rowRef}
         activeOpacity={0.8}
         onPress={() => handleTap()}
-        onLongPress={onLongPress}
+        onLongPress={handleLongPress}
         style={[
           styles.row,
           { justifyContent: isMe ? "flex-end" : "flex-start" },
@@ -204,7 +217,7 @@ export default function MessageBubble({
                 messageId={item.id}
                 items={mediaItems}
                 onPress={(open) => handleTap(open)}
-                onLongPress={onLongPress}
+                onLongPress={handleLongPress}
               />
               {textBubble}
             </View>

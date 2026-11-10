@@ -18,6 +18,8 @@ import {
   AccessibilityInfo,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Dimensions,
+  Keyboard,
 } from "react-native";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -42,6 +44,8 @@ import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
 import ReportModal from "../../components/ReportModal";
 import ReactionEmojiPicker from "./ReactionEmojiPicker";
+import MessageActionsOverlay, { type MessageAction } from "./MessageActionsOverlay";
+import type { Rect } from "../../lib/mediaLayout";
 import { markChatSeen, newestMessageAt } from "../../lib/readState";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
@@ -378,6 +382,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  // Where the long-pressed message is, and a copy of it for the menu to show.
+  const [actionView, setActionView] = useState<{ rect: Rect; bubble: ReactNode } | null>(null);
   // Message the full emoji picker (the "+" in the long-press menu) reacts to.
   const [emojiPickerTarget, setEmojiPickerTarget] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -697,6 +703,55 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     );
   };
 
+  const unsendMessage = (target: Message) => {
+    Alert.alert("Unsend message?", "It will be removed for everyone in this chat.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Unsend",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const res = await apiFetch(`/api/chats/${id}/messages/${target._id}`, { method: "DELETE" });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            setMessages((prev) => replaceMessage(prev, data.message));
+          } catch (err) {
+            console.error("Failed to unsend:", err);
+            Alert.alert("Couldn't unsend message", "Please try again.");
+          }
+        },
+      },
+    ]);
+  };
+
+  // Instagram-style: reply for anything, unsend your own, report or block others'.
+  // Threads stay hidden for now (inline replies instead); existing threads
+  // still open from their "N replies" link.
+  const messageActions = (target: Message): MessageAction[] => {
+    const mine = target.senderId._id === currentUserId;
+    return [
+      ...(!target.deletedAt ? [{ key: "reply", label: "Reply", icon: "arrow-undo-outline" as const, presents: true, onPress: () => startReply(target) }] : []),
+      ...(mine && !target.deletedAt ? [{ key: "unsend", label: "Unsend", icon: "trash-outline" as const, destructive: true, presents: true, onPress: () => unsendMessage(target) }] : []),
+      ...(!mine ? [
+        { key: "report", label: "Report", icon: "flag-outline" as const, destructive: true, presents: true, onPress: () => setReportTarget({ type: "message", id: target._id, name: target.senderId.displayName }) },
+        { key: "block", label: "Block", icon: "ban-outline" as const, destructive: true, presents: true, onPress: () => blockUser(target) },
+      ] : []),
+    ];
+  };
+
+  const openActions = (target: Message, rect: Rect | null, bubble: ReactNode) => {
+    // The keyboard would cover the menu.
+    Keyboard.dismiss();
+    // Couldn't measure it: show it in the middle of the screen.
+    const screen = Dimensions.get("window");
+    setActionView({ rect: rect ?? { x: 0, y: screen.height / 2 - 40, width: screen.width, height: 80 }, bubble });
+    setActionTarget(target);
+  };
+  const closeActions = () => {
+    setActionTarget(null);
+    setActionView(null);
+  };
+
   const visibleMessages = useMemo(
     () => messages.filter((msg) => !blockedIds.has(msg.senderId?._id)),
     [messages, blockedIds]
@@ -973,6 +1028,26 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             const msg = item as Message;
             const key = listKey(msg);
             const grouping = messageGrouping(listItems, index);
+            const bubbleProps = {
+              item: {
+                id: msg._id,
+                user: msg.senderId.displayName,
+                avatarUrl: msg.senderId.avatarUrl,
+                text: msg.deletedAt ? "Message deleted" : msg.text,
+                mediaUrl: msg.mediaUrl ?? null,
+                mediaUrls: msg.mediaUrls,
+                mediaTypes: msg.mediaTypes,
+                mine: currentUserId === msg.senderId._id,
+                replyTo: msg.replyTo ?? null,
+                reactions: groupReactions(msg.reactions, currentUserId),
+              },
+              // A sending message has no server ID yet, so it can't be
+              // reacted to, replied to or opened until it's confirmed.
+              onOpenThread: !threadId && !msg.pending && (!msg.deletedAt || !!msg.replyCount) ? () => router.push(`/chat/${id}/thread/${msg._id}`) : undefined,
+              replyCount: msg.replyCount ?? 0,
+              groupedWithPrevious: grouping.withPrevious,
+              groupedWithNext: grouping.withNext,
+            };
             return (
               <MessageEntrance
                 animate={enteringKeysRef.current.has(key)}
@@ -985,27 +1060,15 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               )}
               <SwipeToReply enabled={!msg.deletedAt && !msg.pending && !error} onReply={() => startReply(msg)}>
               <MessageBubble
-                item={{
-                  id: msg._id,
-                  user: msg.senderId.displayName,
-                  avatarUrl: msg.senderId.avatarUrl,
-                  text: msg.deletedAt ? "Message deleted" : msg.text,
-                  mediaUrl: msg.mediaUrl ?? null,
-                  mediaUrls: msg.mediaUrls,
-                  mediaTypes: msg.mediaTypes,
-                  mine: currentUserId === msg.senderId._id,
-                  replyTo: msg.replyTo ?? null,
-                  reactions: groupReactions(msg.reactions, currentUserId),
-                }}
-                // A sending message has no server ID yet, so it can't be
-                // reacted to, replied to or opened until it's confirmed.
-                onOpenThread={!threadId && !msg.pending && (!msg.deletedAt || !!msg.replyCount) ? () => router.push(`/chat/${id}/thread/${msg._id}`) : undefined}
-                replyCount={msg.replyCount ?? 0}
-                onLongPress={msg.pending ? undefined : () => setActionTarget(msg)}
+                {...bubbleProps}
+                onLongPress={msg.pending ? undefined : (rect) => openActions(
+                  msg,
+                  rect,
+                  // The same message, drawn the same way, for the menu to show in place.
+                  <MessageBubble {...bubbleProps} onOpenThread={bubbleProps.onOpenThread && (() => {})} />
+                )}
                 onReact={msg.pending ? undefined : (emoji) => reactToMessage(msg._id, emoji)}
                 onPressUser={() => setProfileUser(msg.senderId)}
-                groupedWithPrevious={grouping.withPrevious}
-                groupedWithNext={grouping.withNext}
                 sending={!!msg.pending}
               />
               </SwipeToReply>
@@ -1018,80 +1081,6 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
 
       {/* INPUT BAR */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        {actionTarget && (
-          <View style={styles.actionBar}>
-            <Text style={styles.actionTime}>{formatDayAndTime(actionTarget.createdAt)}</Text>
-            <View style={styles.actionTopRow}>
-              <View style={styles.actionEmojiRow}>
-                {actionReactionOptions.map((emoji) => (
-                  <TouchableOpacity
-                    key={emoji}
-                    style={[styles.actionEmojiButton, emoji === myActionReaction && styles.actionEmojiButtonSelected]}
-                    accessibilityLabel={emoji === myActionReaction ? `Remove ${emoji} reaction` : `React with ${emoji}`}
-                    onPress={() => {
-                      reactToMessage(actionTarget._id, emoji);
-                      setActionTarget(null);
-                    }}
-                  >
-                    <Text style={styles.actionEmoji}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity
-                  style={styles.actionEmojiButton}
-                  accessibilityLabel="More reactions"
-                  onPress={() => {
-                    setEmojiPickerTarget(actionTarget);
-                    setActionTarget(null);
-                  }}
-                >
-                  <Text style={styles.actionEmojiMore}>+</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={styles.actionCloseButton} onPress={() => setActionTarget(null)}>
-                <Text style={styles.actionCloseText}>×</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.actionButtonsRow}>
-              {/* Threads are hidden for now (inline replies instead); existing
-                  threads still open from their "N replies" link. */}
-              {!actionTarget.deletedAt && (
-                <TouchableOpacity
-                  style={styles.actionReplyButton}
-                  onPress={() => {
-                    const target = actionTarget;
-                    setActionTarget(null);
-                    startReply(target);
-                  }}
-                >
-                  <Text style={styles.actionReplyText}>Reply</Text>
-                </TouchableOpacity>
-              )}
-              {actionTarget.senderId._id !== currentUserId && (
-                <>
-                  <TouchableOpacity
-                    style={styles.actionReplyButton}
-                    onPress={() => {
-                      setReportTarget({ type: "message", id: actionTarget._id, name: actionTarget.senderId.displayName });
-                      setActionTarget(null);
-                    }}
-                  >
-                    <Text style={[styles.actionReplyText, { color: colors.danger }]}>Report</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionReplyButton}
-                    onPress={() => {
-                      const target = actionTarget;
-                      setActionTarget(null);
-                      blockUser(target);
-                    }}
-                  >
-                    <Text style={[styles.actionReplyText, { color: colors.danger }]}>Block</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </View>
-        )}
         {!!typingLabel && (
           <View style={styles.typingBar}>
             <Text style={styles.typingText}>{typingLabel}</Text>
@@ -1202,6 +1191,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         onBlockedChange={handleBlockedChange}
       />
       <ReportModal target={reportTarget} onClose={() => setReportTarget(null)} />
+      {actionTarget && actionView && (
+        <MessageActionsOverlay
+          rect={actionView.rect}
+          mine={actionTarget.senderId._id === currentUserId}
+          message={actionView.bubble}
+          timeLabel={formatDayAndTime(actionTarget.createdAt)}
+          reactions={actionReactionOptions}
+          selectedReaction={myActionReaction}
+          onReact={(emoji) => reactToMessage(actionTarget._id, emoji)}
+          onMoreReactions={() => setEmojiPickerTarget(actionTarget)}
+          actions={messageActions(actionTarget)}
+          onClose={closeActions}
+        />
+      )}
       <ReactionEmojiPicker
         open={!!emojiPickerTarget}
         onClose={() => setEmojiPickerTarget(null)}
@@ -1417,82 +1420,6 @@ function makeStyles(colors: Colors) {
     dateSeparatorText: {
       fontFamily: fonts.regular,
       fontSize: 12,
-      color: colors.mutedText,
-    },
-    actionBar: {
-      gap: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderTopWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-    },
-    actionTime: {
-      fontFamily: fonts.regular,
-      fontSize: 12,
-      color: colors.mutedText,
-      textAlign: "center",
-    },
-    actionTopRow: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-    actionButtonsRow: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    actionEmojiRow: {
-      flexDirection: "row",
-      flex: 1,
-    },
-    actionEmojiButton: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.inputBg,
-      marginRight: 4,
-    },
-    actionEmojiButtonSelected: {
-      borderWidth: 1.5,
-      borderColor: colors.brand,
-      backgroundColor: colors.brandSoft,
-    },
-    actionEmoji: {
-      fontFamily: fonts.regular,
-      fontSize: 16,
-    },
-    actionEmojiMore: {
-      fontFamily: fonts.medium,
-      fontSize: 18,
-      color: colors.mutedText,
-    },
-    actionReplyButton: {
-      flex: 1,
-      minHeight: 34,
-      paddingHorizontal: 10,
-      borderRadius: 17,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.inputBg,
-    },
-    actionReplyText: {
-      fontSize: 13,
-      fontFamily: fonts.medium,
-      color: colors.text,
-    },
-    actionCloseButton: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      marginLeft: 6,
-    },
-    actionCloseText: {
-      fontFamily: fonts.regular,
-      fontSize: 20,
       color: colors.mutedText,
     },
     typingBar: {

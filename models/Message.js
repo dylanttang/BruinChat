@@ -10,6 +10,9 @@ const messageSchema = new mongoose.Schema(
     mediaTypes: [{ type: String, enum: ['image', 'video'] }],
     threadRootId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+    // Chat members @mentioned in the text. They get a notification even with
+    // class or reply notifications off.
+    mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     reactions: [
       {
         emoji: { type: String, required: true, trim: true, maxlength: 16 },

@@ -8,11 +8,15 @@ export function validCloudinaryUrl(value, folder, userId) {
   const asset = parseMediaReference(value);
   return Boolean(asset && (!folder || asset.folder === folder) && (!userId || asset.ownerId === userId.toString()));
 }
+// Caps how many people one message can notify past their notification settings.
+export const MAX_MENTIONS = 10;
+
 export function validateMessage(body, userId) {
   if (body.text !== undefined && validateText(body.text)) return validateText(body.text);
   if (body.mediaUrl !== undefined && body.mediaUrl !== '' && !validCloudinaryUrl(body.mediaUrl, 'messages', userId)) return 'Invalid media URL';
   if (body.mediaUrls !== undefined && (!Array.isArray(body.mediaUrls) || body.mediaUrls.length > 10 || !body.mediaUrls.every((url) => validCloudinaryUrl(url, 'messages', userId)))) return 'Provide at most 10 Cloudinary media URLs';
   if (body.mediaTypes !== undefined && (!Array.isArray(body.mediaTypes) || body.mediaTypes.length !== (body.mediaUrls?.length || 0) || !body.mediaTypes.every((type) => ['image', 'video'].includes(type)))) return 'Invalid media types';
   if (body.replyTo !== undefined && (typeof body.replyTo !== 'string' || !/^[a-f0-9]{24}$/i.test(body.replyTo))) return 'Invalid reply ID';
+  if (body.mentions !== undefined && (!Array.isArray(body.mentions) || body.mentions.length > MAX_MENTIONS || !body.mentions.every((id) => typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id)))) return `Provide at most ${MAX_MENTIONS} mentions`;
   return null;
 }

@@ -47,6 +47,7 @@ import ReactionEmojiPicker from "./ReactionEmojiPicker";
 import MessageActionsOverlay, { type MessageAction } from "./MessageActionsOverlay";
 import type { Rect } from "../../lib/mediaLayout";
 import { markChatSeen, newestMessageAt } from "../../lib/readState";
+import { keepLoadedMedia } from "../../lib/stableMedia";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
@@ -352,7 +353,7 @@ function listKey(item: ListItem): string {
 }
 
 function replaceMessage(messages: Message[], incoming: Message): Message[] {
-  return messages.map((message) => (message._id === incoming._id ? { ...message, ...incoming } : message));
+  return messages.map((message) => (message._id === incoming._id ? keepLoadedMedia(message, { ...message, ...incoming }) : message));
 }
 
 export default function ConversationScreen({ chatId: id, threadId }: { chatId: string; threadId?: string }) {
@@ -475,7 +476,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       }
       if (msgsRes.ok) {
         const data = await msgsRes.json();
-        setMessages(data.messages);
+        // Reloading (e.g. coming back to the chat) keeps photos already on
+        // screen instead of loading them again under new links.
+        setMessages((prev) => {
+          const shown = new Map(prev.map((message) => [message._id, message]));
+          return (data.messages as Message[]).map((message) => keepLoadedMedia(shown.get(message._id), message));
+        });
         setRoot(data.root ?? null);
         setHasMore(data.hasMore);
         return { messages: data.messages as Message[], hasMore: data.hasMore as boolean };
@@ -595,18 +601,18 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       });
       socket.on("messageEdited", (incoming: Message) => {
         setMessages((prev) => replaceMessage(prev, incoming));
-        setRoot(prev => prev?._id === incoming._id ? incoming : prev);
+        setRoot(prev => prev?._id === incoming._id ? keepLoadedMedia(prev, incoming) : prev);
       });
 
       socket.on("messageDeleted", (incoming: Message) => {
         setMessages((prev) => replaceMessage(prev, incoming));
-        setRoot(prev => prev?._id === incoming._id ? incoming : prev);
+        setRoot(prev => prev?._id === incoming._id ? keepLoadedMedia(prev, incoming) : prev);
       });
 
       socket.on("messageReacted", (incoming: Message) => {
         animateReactionChange();
         setMessages((prev) => replaceMessage(prev, incoming));
-        setRoot(prev => prev?._id === incoming._id ? incoming : prev);
+        setRoot(prev => prev?._id === incoming._id ? keepLoadedMedia(prev, incoming) : prev);
       });
 
       socket.on("typing", ({ chatId, userId, isTyping, threadId: incomingThread }) => {
@@ -658,7 +664,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       const data = await res.json();
       animateReactionChange();
       setMessages((prev) => replaceMessage(prev, data.message));
-      setRoot(prev => prev?._id === data.message._id ? data.message : prev);
+      setRoot(prev => prev?._id === data.message._id ? keepLoadedMedia(prev, data.message) : prev);
     } catch (err) {
       console.error("Failed to react:", err);
     }

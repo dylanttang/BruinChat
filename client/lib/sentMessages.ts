@@ -1,6 +1,8 @@
 // Helpers for showing a message the instant it's sent ("Sending…") and then
 // swapping in the server's copy without the row remounting or re-animating.
 
+import { keepLoadedMedia } from "./stableMedia";
+
 export type ListMessage = {
   _id: string;
   text: string;
@@ -19,7 +21,7 @@ export type ListMessage = {
 export function upsertMessage<T extends ListMessage>(messages: T[], incoming: T): T[] {
   const existing = messages.some((message) => message._id === incoming._id);
   if (existing) {
-    return messages.map((message) => (message._id === incoming._id ? { ...message, ...incoming } : message));
+    return messages.map((message) => (message._id === incoming._id ? keepLoadedMedia(message, { ...message, ...incoming }) : message));
   }
   return [incoming, ...messages];
 }
@@ -45,10 +47,11 @@ export function confirmSent<T extends ListMessage>(messages: T[], clientKey: str
     // Already swapped in (by the socket copy); just merge the latest fields.
     return messages
       .filter((message) => message.clientKey !== clientKey || message._id === sent._id)
-      .map((message) => (message._id === sent._id ? { ...message, ...sent, pending: false } : message));
+      .map((message) => (message._id === sent._id ? keepLoadedMedia(message, { ...message, ...sent, pending: false }) : message));
   }
   if (!messages.some((message) => message.clientKey === clientKey)) return upsertMessage(messages, sent);
-  return messages.map((message) => (message.clientKey === clientKey ? { ...sent, clientKey } : message));
+  // Our photos keep showing the file on the phone, which is already loaded.
+  return messages.map((message) => (message.clientKey === clientKey ? keepLoadedMedia(message, { ...sent, clientKey }) : message));
 }
 
 // Adds a message that arrived over the socket: swaps it in for our matching

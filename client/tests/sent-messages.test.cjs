@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const loadModule = require('./helpers/load-module.cjs');
 
-const sent = loadModule('lib/sentMessages.ts');
+const sent = loadModule('lib/sentMessages.ts', { './stableMedia': loadModule('lib/stableMedia.ts') });
 const me = { _id: 'me' };
 const pending = { _id: 'local-1', clientKey: 'local-1', pending: true, text: 'hi', mediaUrls: [], senderId: me };
 const older = { _id: 'm1', text: 'earlier', senderId: { _id: 'other' } };

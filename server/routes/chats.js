@@ -11,6 +11,7 @@ import { validateMessage, validateText } from '../utils/validation.js';
 import { sendPush } from '../utils/push.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
 import { postingBlock } from '../utils/moderation.js';
+import { toggleReactionUpdate } from '../utils/reactions.js';
 
 const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
@@ -627,22 +628,13 @@ router.post('/:chatId/messages/:id/react', requireAuth, reactionRateLimit, async
       return res.status(400).json({ error: 'Cannot react to a deleted message' });
     }
 
-    // One reaction per person (like Instagram): reacting with the same emoji
-    // removes it, and a different emoji replaces your old one. Clearing all of
-    // the user's reactions also collapses any duplicates from before this rule.
-    const userId = req.user._id.toString();
-    const alreadyReactedWithThis = message.reactions.some(
-      (reaction) => reaction.emoji === emoji && reaction.userId.toString() === userId
+    const result = await Message.updateOne(
+      { _id: message._id, deletedAt: null },
+      toggleReactionUpdate(req.user._id, emoji)
     );
-
-    message.reactions = message.reactions.filter(
-      (reaction) => reaction.userId.toString() !== userId
-    );
-    if (!alreadyReactedWithThis) {
-      message.reactions.push({ emoji, userId: req.user._id });
+    if (!result.matchedCount) {
+      return res.status(400).json({ error: 'Cannot react to a deleted message' });
     }
-
-    await message.save();
 
     const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 

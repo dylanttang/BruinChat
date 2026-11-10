@@ -138,7 +138,7 @@ test('message endpoints reject oversized edits and cross-chat replies; local mul
 });
 
 test('authenticated media uses expiring signed delivery; public/foreign references and other upload owners are rejected', async () => {
-  const { mediaDeliveryUrl, serializeMedia, MEDIA_LINK_TTL_SECONDS } = await import('../utils/media.js');
+  const { mediaDeliveryUrl, serializeMedia, MEDIA_LINK_TTL_SECONDS, MEDIA_LINK_WINDOW_SECONDS } = await import('../utils/media.js');
   process.env.CLOUDINARY_API_KEY = 'test-key';
   process.env.CLOUDINARY_API_SECRET = 'test-secret';
   const asset = `https://res.cloudinary.com/test-cloud/image/authenticated/v123/messages/${userId}/photo.jpg`;
@@ -151,8 +151,21 @@ test('authenticated media uses expiring signed delivery; public/foreign referenc
   assert.equal(delivered.searchParams.get('type'), 'authenticated');
   assert.equal(delivered.searchParams.get('public_id'), `messages/${userId}/photo`);
   assert.ok(delivered.searchParams.get('signature'));
-  assert.ok(Number(delivered.searchParams.get('expires_at')) <= before + MEDIA_LINK_TTL_SECONDS + 1);
-  assert.ok(Number(delivered.searchParams.get('expires_at')) >= before + MEDIA_LINK_TTL_SECONDS);
+  const expiresAt = Number(delivered.searchParams.get('expires_at'));
+  assert.ok(expiresAt <= before + MEDIA_LINK_TTL_SECONDS + 1);
+  assert.ok(expiresAt >= before + MEDIA_LINK_TTL_SECONDS - MEDIA_LINK_WINDOW_SECONDS);
+  assert.equal(Number(delivered.searchParams.get('timestamp')), expiresAt - MEDIA_LINK_TTL_SECONDS);
+  // The same asset gets the same URL within a signing window, so clients can cache it.
+  const realNow = Date.now;
+  try {
+    const windowStart = 1_800_000_000 - (1_800_000_000 % MEDIA_LINK_WINDOW_SECONDS);
+    Date.now = () => (windowStart + 5) * 1000;
+    const first = mediaDeliveryUrl(asset);
+    Date.now = () => (windowStart + MEDIA_LINK_WINDOW_SECONDS - 1) * 1000;
+    assert.equal(mediaDeliveryUrl(asset), first);
+    Date.now = () => (windowStart + MEDIA_LINK_WINDOW_SECONDS) * 1000;
+    assert.notEqual(mediaDeliveryUrl(asset), first);
+  } finally { Date.now = realNow; }
   const source = { _id: userId, mediaUrl: asset, mediaUrls: [asset], replyTo: { mediaUrl: asset }, avatarUrl: asset };
   const output = serializeMedia(source);
   assert.ok(output.mediaUrl.startsWith('https://api.cloudinary.com/'));

@@ -14,6 +14,7 @@ import Animated, {
   Easing,
   Extrapolation,
   interpolate,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withDecay,
@@ -72,6 +73,9 @@ const RADIUS = 14;
 const CONTROLS_HEIGHT = 24;
 // How long before the end a video jumps back to the start (seconds).
 const LOOP_EARLY_S = 0.2;
+// A playing video's bar fades away after this long without a touch.
+const CONTROLS_HIDE_MS = 2500;
+const CONTROLS_FADE_MS = 200;
 const SPRING = { damping: 20, stiffness: 220 };
 // A zoomed photo going back inside its edges, or back to 1x, snaps there
 // quickly instead of springing.
@@ -101,8 +105,8 @@ type Props = {
 
 // Instagram-style full-screen viewer: the chat blurs out behind the media,
 // which grows from its spot and shrinks back on close. Swipe left and right
-// through the media (stopping at the first and last), pinch to zoom photos,
-// and tap outside, press ✕ or swipe down to close.
+// through the media (stopping at the first and last), pinch to zoom photos
+// and videos, and tap outside, press ✕ or swipe down to close.
 //
 // Every touch here is handled by react-native-gesture-handler and every
 // animation runs on the UI thread with Reanimated. Mixing in React Native's
@@ -196,8 +200,6 @@ export default function MediaViewer({ items, initialIndex, origins, onClose }: P
     indexRef.current = next;
     setIndex(next);
   }, []);
-
-  const isPhoto = items[index]?.type === "image";
 
   const { pan, root } = useMemo(() => {
     const pan = Gesture.Pan()
@@ -296,7 +298,6 @@ export default function MediaViewer({ items, initialIndex, origins, onClose }: P
       });
 
     const pinch = Gesture.Pinch()
-      .enabled(isPhoto)
       .onStart(() => {
         "worklet";
         // Not in the middle of paging or closing.
@@ -334,7 +335,7 @@ export default function MediaViewer({ items, initialIndex, origins, onClose }: P
     // Two fingers move the photo while zooming it.
     return { pan, root: Gesture.Simultaneous(pan, pinch) };
   }, [
-    count, isPhoto, close, settlePage,
+    count, close, settlePage,
     touchStart, closing, mode, scale, pinching, rowX, current, page, dragY, size, screen, zoomX, zoomY,
     pinchIgnored, pinchFrom, pinchLast,
   ]);
@@ -498,7 +499,7 @@ function ViewerPage({ item, left, current, origin, window, progress, dragY, zoom
       {item.type === "video" ? (
         // Neighbours get their player too, paused, so a video has loaded by
         // the time it's swiped to, and swiping back to it doesn't reload it.
-        <ViewerVideo item={item} active={current} />
+        <ViewerVideo item={item} active={current} zoomScale={zoom.scale} />
       ) : (
         <Image source={{ uri: item.uri }} style={StyleSheet.absoluteFill} resizeMode="contain" />
       )}
@@ -545,10 +546,15 @@ function ViewerButton({ label, style, onPress, children }: {
 }
 
 // Plays as soon as it's the current page and loops; swiping away unmounts it,
-// which stops it. Tap the video to pause or play, or use the bar along the
-// bottom: play/pause on the left, drag anywhere on the bar to jump there, and
-// the video's length on the right.
-function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
+// which stops it. The bar along the bottom (play/pause on the left, drag
+// anywhere on it to jump there, the length on the right) fades away while the
+// video plays; tap the video to bring it back, and tap again to pause or play.
+// Zoomed in, the bar stays hidden and a tap pauses or plays.
+function ViewerVideo({ item, active, zoomScale }: {
+  item: MediaItem;
+  active: boolean;
+  zoomScale: SharedValue<number>;
+}) {
   const uri = item.uri;
   // The player is released when this unmounts, which stops the video.
   const player = useVideoPlayer(uri, (p) => {
@@ -560,6 +566,9 @@ function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
     // Plays with sound even when the phone is on silent, and pauses other
     // apps' music while it plays (Android: takes audio focus).
     p.audioMixingMode = "auto";
+    // iOS: start as soon as there's something to show, instead of waiting
+    // until it thinks the whole video can play without a pause.
+    p.bufferOptions = { ...p.bufferOptions, waitsToMinimizeStalling: false };
   });
   // This player already knows the length, so don't load it a second time.
   const knownDuration = useVideoDuration(uri, false);
@@ -571,6 +580,25 @@ function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
   const [frameShown, setFrameShown] = useState(false);
   const resumeAfterScrub = useRef(false);
   const lastSeek = useRef(0);
+  const [controlsShown, setControlsShown] = useState(true);
+  const [zoomed, setZoomed] = useState(false);
+  // Bumped by every touch on the video or the bar, to restart the hide timer.
+  const [lastTouch, setLastTouch] = useState(0);
+  const controlsOpacity = useSharedValue(1);
+
+  useAnimatedReaction(
+    () => zoomScale.value > 1.01,
+    (isZoomed, wasZoomed) => {
+      if (isZoomed !== wasZoomed) scheduleOnRN(setZoomed, isZoomed);
+    },
+    [zoomScale]
+  );
+
+  const barVisible = controlsShown && !zoomed;
+  useEffect(() => {
+    controlsOpacity.value = withTiming(barVisible ? 1 : 0, { duration: CONTROLS_FADE_MS });
+  }, [barVisible, controlsOpacity]);
+  const controlsStyle = useAnimatedStyle(() => ({ opacity: controlsOpacity.value }));
 
   const readDuration = () => {
     const ms = player.duration * 1000;
@@ -614,12 +642,32 @@ function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
   const duration = playback.duration || knownDuration || 0;
   const position = scrubbing ?? playback.position;
 
+  // Hide the bar a moment after the last touch while playing; paused or
+  // dragging the bar, it stays.
+  useEffect(() => {
+    if (!controlsShown || !playback.playing || scrubbing !== null) return;
+    const timer = setTimeout(() => setControlsShown(false), CONTROLS_HIDE_MS);
+    return () => clearTimeout(timer);
+  }, [controlsShown, playback.playing, scrubbing, lastTouch]);
+
+  const showControls = () => {
+    setControlsShown(true);
+    setLastTouch(Date.now());
+  };
+
   const toggle = () => {
+    showControls();
     if (playback.playing) player.pause();
     else player.play();
   };
-  const toggleRef = useRef(toggle);
-  toggleRef.current = toggle;
+  // A tap on the video brings the bar back first; once it's showing (or while
+  // zoomed, when it stays hidden), taps pause and play.
+  const tapVideo = () => {
+    if (!controlsShown && !zoomed) showControls();
+    else toggle();
+  };
+  const tapRef = useRef(tapVideo);
+  tapRef.current = tapVideo;
 
   const tap = useMemo(
     () =>
@@ -627,7 +675,7 @@ function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
         .runOnJS(true)
         .maxDistance(TAP_SLOP)
         .onEnd((_event, success) => {
-          if (success) toggleRef.current();
+          if (success) tapRef.current();
         }),
     []
   );
@@ -672,13 +720,13 @@ function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
           accessibilityRole="button"
           accessibilityLabel={label}
           accessibilityActions={[{ name: "activate" }]}
-          onAccessibilityAction={() => toggleRef.current()}
+          onAccessibilityAction={() => toggle()}
           style={StyleSheet.absoluteFill}
         />
       </GestureDetector>
 
       {/* One row, all the same height: play/pause, progress, length. */}
-      <View style={styles.controls}>
+      <Animated.View style={[styles.controls, controlsStyle]} pointerEvents={barVisible ? "auto" : "none"}>
         <ViewerButton label={label} style={styles.controlBtn} onPress={toggle}>
           {/* Drawn rather than text glyphs so they sit exactly centered. */}
           {playback.playing ? (
@@ -693,6 +741,7 @@ function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
         <ProgressBar
           fraction={duration ? position / duration : 0}
           onScrubStart={() => {
+            showControls();
             resumeAfterScrub.current = playback.playing;
             player.pause();
           }}
@@ -712,10 +761,11 @@ function ViewerVideo({ item, active }: { item: MediaItem; active: boolean }) {
             setScrubbing(null);
             seekTo(ms);
             if (resumeAfterScrub.current) player.play();
+            setLastTouch(Date.now());
           }}
         />
         <Text style={styles.time}>{formatDuration(duration)}</Text>
-      </View>
+      </Animated.View>
     </>
   );
 }

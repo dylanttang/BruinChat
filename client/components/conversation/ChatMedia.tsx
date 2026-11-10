@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { Rect, chatGrid, clampRatio, fitWithin } from "../../lib/mediaLayout";
 import { mediaKey } from "../../lib/messageMedia";
@@ -15,17 +15,12 @@ const SINGLE_MAX_HEIGHT = 300;
 const GRID_GAP = 4;
 const GRID_TILE = (SINGLE_MAX_WIDTH - GRID_GAP) / 2;
 const RADIUS = 18;
-// The corners that touch a caption below are nearly square, so the photo and
-// its caption read as one attached card.
-const JOINED_RADIUS = 4;
 
 type Props = {
   // With it, the viewer swipes through all of the chat's media, not just this
   // message's.
   messageId?: string;
   items: MediaItem[];
-  // Shown right under the media, at the same width, attached to it.
-  caption?: ReactNode;
   // Called with the tile's "open" action; the bubble decides when to run it
   // (it waits briefly so a double-tap can like the message instead).
   onPress: (open: () => void) => void;
@@ -35,14 +30,11 @@ type Props = {
 // Media in a message. 1–3 items open straight into the swipeable viewer;
 // 4 or more show as a 2×2 grid ("+N" on the last tile when there are more)
 // and open a grid of all of them first.
-export default function ChatMedia({ messageId, items, caption, onPress, onLongPress }: Props) {
+export default function ChatMedia({ messageId, items, onPress, onLongPress }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { shown, wideLast, extra, opensGallery } = chatGrid(items.length);
   const single = shown === 1;
-  const attached = !!caption;
-  // A single photo's width depends on its shape; the caption matches it.
-  const [singleWidth, setSingleWidth] = useState<number>(SINGLE_MAX_WIDTH);
   const tileRefs = useRef<(View | null)[]>([]);
   const chat = useChatMediaList();
   const [viewer, setViewer] = useState<{ items: MediaItem[]; index: number; origins: (Rect | null)[] } | null>(null);
@@ -73,19 +65,12 @@ export default function ChatMedia({ messageId, items, caption, onPress, onLongPr
       <View style={single ? null : styles.grid}>
         {items.slice(0, shown).map((item, index) => {
           const wide = wideLast && index === shown - 1;
-          // Which of this tile's bottom corners touch the caption.
-          const joined: Joined = !attached ? null
-            : single || wide ? "both"
-            : index === shown - 2 ? "left"
-            : index === shown - 1 ? "right"
-            : null;
           return (
             <MediaTile
               key={`${item.uri}-${index}`}
               item={item}
               single={single}
               wide={wide}
-              joined={joined}
               extra={index === shown - 1 ? extra : 0}
               styles={styles}
               tileRef={(view) => {
@@ -94,14 +79,12 @@ export default function ChatMedia({ messageId, items, caption, onPress, onLongPr
                 if (view) chat.tiles.set(mediaKey(messageId, index), view);
                 else chat.tiles.delete(mediaKey(messageId, index));
               }}
-              onWidth={single ? setSingleWidth : undefined}
               onPress={() => onPress(() => openAt(index))}
               onLongPress={onLongPress}
             />
           );
         })}
       </View>
-      {attached && <View style={{ width: single ? singleWidth : SINGLE_MAX_WIDTH }}>{caption}</View>}
 
       {viewer && (
         <MediaViewer
@@ -126,18 +109,14 @@ function measureOnScreen(view: View | null): Promise<Rect | null> {
   });
 }
 
-type Joined = "left" | "right" | "both" | null;
-
-function MediaTile({ item, single, wide, joined, extra, styles, tileRef, onWidth, onPress, onLongPress }: {
+function MediaTile({ item, single, wide, extra, styles, tileRef, onPress, onLongPress }: {
   item: MediaItem;
   single: boolean;
   wide: boolean;
-  joined: Joined;
   // How many more items are hidden behind this tile ("+N"), if any.
   extra: number;
   styles: ReturnType<typeof makeStyles>;
   tileRef: (view: View | null) => void;
-  onWidth?: (width: number) => void;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
@@ -146,16 +125,6 @@ function MediaTile({ item, single, wide, joined, extra, styles, tileRef, onWidth
   const size = single
     ? fitWithin(clampRatio(ratio ?? 1), SINGLE_MAX_WIDTH, SINGLE_MAX_HEIGHT)
     : { width: wide ? SINGLE_MAX_WIDTH : GRID_TILE, height: GRID_TILE };
-  const corner = joined && {
-    ...(joined !== "right" && { borderBottomLeftRadius: JOINED_RADIUS }),
-    ...(joined !== "left" && { borderBottomRightRadius: JOINED_RADIUS }),
-  };
-
-  // Report the width before paint so the caption never shows at the wrong size.
-  useLayoutEffect(() => {
-    onWidth?.(size.width);
-  }, [onWidth, size.width]);
-
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -164,7 +133,7 @@ function MediaTile({ item, single, wide, joined, extra, styles, tileRef, onWidth
       accessibilityRole="imagebutton"
       accessibilityLabel={extra ? `Show all, ${extra} more` : isVideo ? "Open video" : "Open photo"}
     >
-      <View ref={tileRef} collapsable={false} style={[styles.tile, size, corner, isVideo && styles.videoTile]}>
+      <View ref={tileRef} collapsable={false} style={[styles.tile, size, isVideo && styles.videoTile]}>
         <MediaPreview item={item} showDuration={!single} />
         {extra > 0 && (
           <View style={styles.moreOverlay}>

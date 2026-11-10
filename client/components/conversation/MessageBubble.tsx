@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Pressable, ActivityIndicator } from "react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
@@ -39,6 +39,9 @@ type Props = {
   // on the last.
   groupedWithPrevious?: boolean;
   groupedWithNext?: boolean;
+  // Still uploading: photos and videos show "Sending…" under them, since a
+  // video can take a while.
+  sending?: boolean;
 };
 
 // How far the reaction pills hang below the bubble. The pills are ~25px tall,
@@ -64,6 +67,7 @@ function getReplySummary(message: ReplyMessage) {
 
 export default function MessageBubble({
   item, onLongPress, onReact, onPressUser, onOpenThread, replyCount = 0, groupedWithPrevious = false, groupedWithNext = false,
+  sending = false,
 }: Props) {
   const isMe = item.mine;
   const { colors } = useTheme();
@@ -113,9 +117,9 @@ export default function MessageBubble({
   };
 
   // Photos and videos sit on their own, with no bubble or frame around them.
-  // Any caption (and the reply quote) goes in a gradient bubble attached right
-  // below, at the same width, joined by nearly square corners (orange = you,
-  // blue = others).
+  // Any caption (and the reply quote) goes in its own gradient bubble right
+  // below, sized to its text like iMessage, so it never changes width when
+  // the photo loads (orange = you, blue = others).
   const mediaItems = messageMedia(item);
   const hasMedia = mediaItems.length > 0;
   const hasText = !!item.text;
@@ -139,8 +143,9 @@ export default function MessageBubble({
       style={[
         styles.bubble,
         isMe ? styles.myBubble : styles.otherBubble,
-        hasMedia ? styles.captionBubble : { alignSelf: isMe ? "flex-end" : "flex-start" },
-        !hasMedia && groupedWithPrevious && (isMe ? styles.myGroupedBubble : styles.otherGroupedBubble),
+        { alignSelf: isMe ? "flex-end" : "flex-start" },
+        hasMedia && styles.captionBubble,
+        (hasMedia || groupedWithPrevious) && (isMe ? styles.myGroupedBubble : styles.otherGroupedBubble),
       ]}
     >
       {replyPreview}
@@ -198,13 +203,22 @@ export default function MessageBubble({
               <ChatMedia
                 messageId={item.id}
                 items={mediaItems}
-                caption={showBubble ? textBubble : undefined}
                 onPress={(open) => handleTap(open)}
                 onLongPress={onLongPress}
               />
+              {textBubble}
             </View>
           ) : (
             textBubble
+          )}
+
+          {sending && hasMedia && (
+            <View style={[styles.sendingRow, { alignSelf: isMe ? "flex-end" : "flex-start" }]}>
+              <ActivityIndicator size="small" color={colors.mutedText} />
+              <Text style={styles.sendingText}>
+                {mediaItems.some((media) => media.type === "video") ? "Sending video…" : "Sending…"}
+              </Text>
+            </View>
           )}
 
           {/* Only show the link once a thread exists; new threads start from
@@ -326,12 +340,9 @@ function makeStyles(colors: Colors) {
       borderRadius: 20,
       overflow: "hidden",
     },
-    // A caption attached under a photo, the same width, with nearly square
-    // top corners meeting the photo's bottom corners.
+    // A caption sits just under its photo, like the next message in a run.
     captionBubble: {
       marginTop: 2,
-      borderTopLeftRadius: 4,
-      borderTopRightRadius: 4,
     },
     myBubble: {
       borderBottomRightRadius: 6,
@@ -344,6 +355,17 @@ function makeStyles(colors: Colors) {
     },
     otherGroupedBubble: {
       borderTopLeftRadius: 6,
+    },
+    sendingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 4,
+    },
+    sendingText: {
+      fontFamily: fonts.regular,
+      fontSize: 12,
+      color: colors.mutedText,
     },
     messageText: {
       fontFamily: fonts.regular,

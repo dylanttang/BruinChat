@@ -383,6 +383,9 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
+  // The picker can take a while to hand back a video (it converts it first),
+  // so the composer shows that something is coming.
+  const [preparingMedia, setPreparingMedia] = useState(false);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   // Socket handlers are registered once, so they read the latest block list
   // through a ref instead of closing over stale state.
@@ -737,7 +740,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const sendMessage = async () => {
     if (error || (threadId && root?.deletedAt)) return;
     const text = message.trim();
-    if ((!text && pendingMedia.length === 0) || sending) {
+    if ((!text && pendingMedia.length === 0) || sending || preparingMedia) {
       if (!text) stopTyping();
       return;
     }
@@ -833,11 +836,14 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
+    setPreparingMedia(true);
     try {
       const result = await ImagePicker.launchImageLibraryAsync(LIBRARY_MEDIA_OPTIONS);
       if (!result.canceled) addPickedMedia(result.assets);
     } catch {
       Alert.alert("Could not prepare media", "Please try again or choose a different photo or video.");
+    } finally {
+      setPreparingMedia(false);
     }
   };
 
@@ -848,11 +854,14 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
+    setPreparingMedia(true);
     try {
       const result = await ImagePicker.launchCameraAsync(CAMERA_MEDIA_OPTIONS);
       if (!result.canceled) addPickedMedia(result.assets);
     } catch {
       Alert.alert("Could not prepare media", "Please try recording again.");
+    } finally {
+      setPreparingMedia(false);
     }
   };
 
@@ -950,6 +959,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
           }}
           scrollEventThrottle={16}
+          // Drag the messages down to put the keyboard away, like iMessage.
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           contentContainerStyle={styles.list}
           renderItem={({ item, index }) => {
             if ("type" in item && item.type === "date") {
@@ -995,6 +1006,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                 onPressUser={() => setProfileUser(msg.senderId)}
                 groupedWithPrevious={grouping.withPrevious}
                 groupedWithNext={grouping.withNext}
+                sending={!!msg.pending}
               />
               </SwipeToReply>
               </MessageEntrance>
@@ -1096,7 +1108,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             </TouchableOpacity>
           </View>
         )}
-        {pendingMedia.length > 0 && (
+        {(pendingMedia.length > 0 || preparingMedia) && (
           <View style={styles.photoPreviewBar}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoPreviewList}>
               {pendingMedia.map((item, index) => (
@@ -1119,6 +1131,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                   </TouchableOpacity>
                 </View>
               ))}
+              {preparingMedia && (
+                <View style={[styles.photoPreviewItem, styles.preparingItem]} accessibilityLabel="Preparing media">
+                  <ActivityIndicator color={colors.mutedText} />
+                  <Text style={styles.preparingText}>Preparing…</Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         )}
@@ -1159,9 +1177,9 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             />
 
             <TouchableOpacity
-              style={[styles.sendBtn, (sending || (!message.trim() && pendingMedia.length === 0)) && styles.sendBtnDisabled]}
+              style={[styles.sendBtn, (sending || preparingMedia || (!message.trim() && pendingMedia.length === 0)) && styles.sendBtnDisabled]}
               onPress={sendMessage}
-              disabled={sending || (!message.trim() && pendingMedia.length === 0)}
+              disabled={sending || preparingMedia || (!message.trim() && pendingMedia.length === 0)}
               accessibilityLabel="Send message"
             >
               <Text style={styles.sendText}>➤</Text>
@@ -1344,6 +1362,16 @@ function makeStyles(colors: Colors) {
       borderRadius: 12,
       overflow: "hidden",
       backgroundColor: colors.inputBg,
+    },
+    preparingItem: {
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+    preparingText: {
+      fontFamily: fonts.regular,
+      fontSize: 11,
+      color: colors.mutedText,
     },
     photoPreviewImage: {
       width: "100%",

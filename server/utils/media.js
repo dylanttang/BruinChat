@@ -1,6 +1,12 @@
 import { v2 as cloudinary } from 'cloudinary';
 
 export const MEDIA_LINK_TTL_SECONDS = 3600;
+// Links are signed per 15-minute window, so a photo keeps the same URL within
+// it and the app's image cache works (a fresh URL on every response made
+// images flash grey and download again, e.g. after a reaction). Each link
+// stays valid for at least TTL - window, and its signature is never older
+// than TTL.
+export const MEDIA_LINK_WINDOW_SECONDS = 900;
 
 // Only canonical, unsigned authenticated asset references are stored in MongoDB.
 export function parseMediaReference(value) {
@@ -21,6 +27,8 @@ export function mediaDeliveryUrl(value) {
   const asset = parseMediaReference(value);
   if (!asset) return '';
   if (!process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) return '';
+  const now = Math.floor(Date.now() / 1000);
+  const signingWindow = now - (now % MEDIA_LINK_WINDOW_SECONDS);
   return cloudinary.utils.private_download_url(asset.publicId, asset.format, {
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -28,7 +36,8 @@ export function mediaDeliveryUrl(value) {
     resource_type: asset.resourceType,
     type: 'authenticated',
     attachment: false,
-    expires_at: Math.floor(Date.now() / 1000) + MEDIA_LINK_TTL_SECONDS,
+    timestamp: signingWindow,
+    expires_at: signingWindow + MEDIA_LINK_TTL_SECONDS,
   });
 }
 

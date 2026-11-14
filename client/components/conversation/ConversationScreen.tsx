@@ -18,6 +18,8 @@ import {
   AccessibilityInfo,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Dimensions,
+  Keyboard,
 } from "react-native";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -42,7 +44,11 @@ import { ReportTarget, setUserBlocked } from "../../lib/moderation";
 import UserProfileSheet, { ProfileUser } from "../../components/UserProfileSheet";
 import ReportModal from "../../components/ReportModal";
 import ReactionEmojiPicker from "./ReactionEmojiPicker";
+import MessageActionsOverlay, { type MessageAction } from "./MessageActionsOverlay";
+import type { Rect } from "../../lib/mediaLayout";
 import { markChatSeen, newestMessageAt } from "../../lib/readState";
+import { keepLoadedMedia } from "../../lib/stableMedia";
+import { insertMention, matchMembers, mentionQuery, mentionsInText, type Mentionable } from "../../lib/mentions";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
@@ -178,6 +184,7 @@ type Message = {
   replyCount?: number;
   deletedAt?: string | null;
   reactions?: Reaction[];
+  mentions?: Mentionable[];
   // Set on our own message while it's still sending. clientKey stays on the
   // row after the server confirms it, so the row keeps its list key and
   // doesn't remount (or re-animate) when the real message replaces it.
@@ -288,7 +295,7 @@ type Chat = {
   _id: string;
   name: string;
   isGroup?: boolean;
-  members: { _id: string; displayName: string }[];
+  members: { _id: string; displayName: string; avatarUrl?: string }[];
 };
 
 function formatTime(iso: string): string {
@@ -348,7 +355,7 @@ function listKey(item: ListItem): string {
 }
 
 function replaceMessage(messages: Message[], incoming: Message): Message[] {
-  return messages.map((message) => (message._id === incoming._id ? { ...message, ...incoming } : message));
+  return messages.map((message) => (message._id === incoming._id ? keepLoadedMedia(message, { ...message, ...incoming }) : message));
 }
 
 export default function ConversationScreen({ chatId: id, threadId }: { chatId: string; threadId?: string }) {
@@ -378,11 +385,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  // Where the long-pressed message is, and a copy of it for the menu to show.
+  const [actionView, setActionView] = useState<{ rect: Rect; bubble: ReactNode } | null>(null);
   // Message the full emoji picker (the "+" in the long-press menu) reacts to.
   const [emojiPickerTarget, setEmojiPickerTarget] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
+  // Where the cursor is, for @mention suggestions, and who's been picked
+  // from them for the message being written.
+  const [cursor, setCursor] = useState(0);
+  const [pickedMentions, setPickedMentions] = useState<Mentionable[]>([]);
+  // The picker can take a while to hand back a video (it converts it first),
+  // so the composer shows that something is coming.
+  const [preparingMedia, setPreparingMedia] = useState(false);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   // Socket handlers are registered once, so they read the latest block list
   // through a ref instead of closing over stale state.
@@ -466,7 +482,12 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       }
       if (msgsRes.ok) {
         const data = await msgsRes.json();
-        setMessages(data.messages);
+        // Reloading (e.g. coming back to the chat) keeps photos already on
+        // screen instead of loading them again under new links.
+        setMessages((prev) => {
+          const shown = new Map(prev.map((message) => [message._id, message]));
+          return (data.messages as Message[]).map((message) => keepLoadedMedia(shown.get(message._id), message));
+        });
         setRoot(data.root ?? null);
         setHasMore(data.hasMore);
         return { messages: data.messages as Message[], hasMore: data.hasMore as boolean };
@@ -586,18 +607,18 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       });
       socket.on("messageEdited", (incoming: Message) => {
         setMessages((prev) => replaceMessage(prev, incoming));
-        setRoot(prev => prev?._id === incoming._id ? incoming : prev);
+        setRoot(prev => prev?._id === incoming._id ? keepLoadedMedia(prev, incoming) : prev);
       });
 
       socket.on("messageDeleted", (incoming: Message) => {
         setMessages((prev) => replaceMessage(prev, incoming));
-        setRoot(prev => prev?._id === incoming._id ? incoming : prev);
+        setRoot(prev => prev?._id === incoming._id ? keepLoadedMedia(prev, incoming) : prev);
       });
 
       socket.on("messageReacted", (incoming: Message) => {
         animateReactionChange();
         setMessages((prev) => replaceMessage(prev, incoming));
-        setRoot(prev => prev?._id === incoming._id ? incoming : prev);
+        setRoot(prev => prev?._id === incoming._id ? keepLoadedMedia(prev, incoming) : prev);
       });
 
       socket.on("typing", ({ chatId, userId, isTyping, threadId: incomingThread }) => {
@@ -649,7 +670,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       const data = await res.json();
       animateReactionChange();
       setMessages((prev) => replaceMessage(prev, data.message));
-      setRoot(prev => prev?._id === data.message._id ? data.message : prev);
+      setRoot(prev => prev?._id === data.message._id ? keepLoadedMedia(prev, data.message) : prev);
     } catch (err) {
       console.error("Failed to react:", err);
     }
@@ -692,6 +713,55 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         },
       ]
     );
+  };
+
+  const unsendMessage = (target: Message) => {
+    Alert.alert("Unsend message?", "It will be removed for everyone in this chat.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Unsend",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const res = await apiFetch(`/api/chats/${id}/messages/${target._id}`, { method: "DELETE" });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            setMessages((prev) => replaceMessage(prev, data.message));
+          } catch (err) {
+            console.error("Failed to unsend:", err);
+            Alert.alert("Couldn't unsend message", "Please try again.");
+          }
+        },
+      },
+    ]);
+  };
+
+  // Instagram-style: reply for anything, unsend your own, report or block others'.
+  // Threads stay hidden for now (inline replies instead); existing threads
+  // still open from their "N replies" link.
+  const messageActions = (target: Message): MessageAction[] => {
+    const mine = target.senderId._id === currentUserId;
+    return [
+      ...(!target.deletedAt ? [{ key: "reply", label: "Reply", icon: "arrow-undo-outline" as const, presents: true, onPress: () => startReply(target) }] : []),
+      ...(mine && !target.deletedAt ? [{ key: "unsend", label: "Unsend", icon: "trash-outline" as const, destructive: true, presents: true, onPress: () => unsendMessage(target) }] : []),
+      ...(!mine ? [
+        { key: "report", label: "Report", icon: "flag-outline" as const, destructive: true, presents: true, onPress: () => setReportTarget({ type: "message", id: target._id, name: target.senderId.displayName }) },
+        { key: "block", label: "Block", icon: "ban-outline" as const, destructive: true, presents: true, onPress: () => blockUser(target) },
+      ] : []),
+    ];
+  };
+
+  const openActions = (target: Message, rect: Rect | null, bubble: ReactNode) => {
+    // The keyboard would cover the menu.
+    Keyboard.dismiss();
+    // Couldn't measure it: show it in the middle of the screen.
+    const screen = Dimensions.get("window");
+    setActionView({ rect: rect ?? { x: 0, y: screen.height / 2 - 40, width: screen.width, height: 80 }, bubble });
+    setActionTarget(target);
+  };
+  const closeActions = () => {
+    setActionTarget(null);
+    setActionView(null);
   };
 
   const visibleMessages = useMemo(
@@ -737,7 +807,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const sendMessage = async () => {
     if (error || (threadId && root?.deletedAt)) return;
     const text = message.trim();
-    if ((!text && pendingMedia.length === 0) || sending) {
+    if ((!text && pendingMedia.length === 0) || sending || preparingMedia) {
       if (!text) stopTyping();
       return;
     }
@@ -745,6 +815,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     // typing while this one sends; put it back if the send fails.
     const media = pendingMedia;
     const reply = replyingTo;
+    const picked = pickedMentions;
+    const mentions = mentionsInText(text, picked);
     // Show the message right away (marked as sending) instead of waiting for
     // the upload and the server, like iMessage and Instagram do.
     const clientKey = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -761,6 +833,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         createdAt: new Date().toISOString(),
         senderId: me,
         replyTo: reply,
+        mentions,
         ...(threadId ? { threadRootId: threadId } : {}),
       }, ...prev]);
     }
@@ -768,6 +841,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     setMessage("");
     setPendingMedia([]);
     setReplyingTo(null);
+    setPickedMentions([]);
     stopTyping();
     try {
       const mediaUrls = [];
@@ -780,6 +854,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           text, mediaUrls, mediaTypes: media.map(item => item.type),
           ...(threadId ? { threadRootId: threadId } : {}),
           ...(reply ? { replyTo: reply._id } : {}),
+          ...(mentions.length ? { mentions: mentions.map((member) => member._id) } : {}),
         }),
       });
       const data = await response.json();
@@ -791,6 +866,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       setMessage(current => current || text);
       setPendingMedia(current => current.length ? current : media);
       setReplyingTo(current => current ?? reply);
+      setPickedMentions(current => current.length ? current : picked);
       if (err?.code === "MUTED") {
         setMutedUntil(new Date(err.mutedUntil));
       } else if (err?.code === "BANNED") {
@@ -833,11 +909,14 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
+    setPreparingMedia(true);
     try {
       const result = await ImagePicker.launchImageLibraryAsync(LIBRARY_MEDIA_OPTIONS);
       if (!result.canceled) addPickedMedia(result.assets);
     } catch {
       Alert.alert("Could not prepare media", "Please try again or choose a different photo or video.");
+    } finally {
+      setPreparingMedia(false);
     }
   };
 
@@ -848,11 +927,14 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       return;
     }
 
+    setPreparingMedia(true);
     try {
       const result = await ImagePicker.launchCameraAsync(CAMERA_MEDIA_OPTIONS);
       if (!result.canceled) addPickedMedia(result.assets);
     } catch {
       Alert.alert("Could not prepare media", "Please try recording again.");
+    } finally {
+      setPreparingMedia(false);
     }
   };
 
@@ -878,6 +960,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const actionReactionOptions = myActionReaction && !REACTION_OPTIONS.includes(myActionReaction)
     ? [myActionReaction, ...REACTION_OPTIONS]
     : REACTION_OPTIONS;
+
+  // Typing "@" in a group chat suggests its members.
+  const mentionable = chat?.isGroup === false
+    ? []
+    : (chat?.members ?? []).filter((member) => member._id !== currentUserId && !blockedIds.has(member._id));
+  const activeMention = mentionable.length ? mentionQuery(message, Math.min(cursor, message.length)) : null;
+  const mentionSuggestions = activeMention ? matchMembers(mentionable, activeMention.query) : [];
+  const pickMention = (member: (typeof mentionable)[number]) => {
+    if (!activeMention) return;
+    const next = insertMention(message, activeMention.start, Math.min(cursor, message.length), member.displayName);
+    handleMessageChange(next.text);
+    setCursor(next.cursor);
+    setPickedMentions((prev) => [...prev, { _id: member._id, displayName: member.displayName }]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -950,6 +1046,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
           }}
           scrollEventThrottle={16}
+          // Drag the messages down to put the keyboard away, like iMessage.
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           contentContainerStyle={styles.list}
           renderItem={({ item, index }) => {
             if ("type" in item && item.type === "date") {
@@ -962,6 +1060,27 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             const msg = item as Message;
             const key = listKey(msg);
             const grouping = messageGrouping(listItems, index);
+            const bubbleProps = {
+              item: {
+                id: msg._id,
+                user: msg.senderId.displayName,
+                avatarUrl: msg.senderId.avatarUrl,
+                text: msg.deletedAt ? "Message deleted" : msg.text,
+                mediaUrl: msg.mediaUrl ?? null,
+                mediaUrls: msg.mediaUrls,
+                mediaTypes: msg.mediaTypes,
+                mine: currentUserId === msg.senderId._id,
+                replyTo: msg.replyTo ?? null,
+                reactions: groupReactions(msg.reactions, currentUserId),
+                mentionNames: msg.mentions?.map((member) => member.displayName),
+              },
+              // A sending message has no server ID yet, so it can't be
+              // reacted to, replied to or opened until it's confirmed.
+              onOpenThread: !threadId && !msg.pending && (!msg.deletedAt || !!msg.replyCount) ? () => router.push(`/chat/${id}/thread/${msg._id}`) : undefined,
+              replyCount: msg.replyCount ?? 0,
+              groupedWithPrevious: grouping.withPrevious,
+              groupedWithNext: grouping.withNext,
+            };
             return (
               <MessageEntrance
                 animate={enteringKeysRef.current.has(key)}
@@ -974,27 +1093,16 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               )}
               <SwipeToReply enabled={!msg.deletedAt && !msg.pending && !error} onReply={() => startReply(msg)}>
               <MessageBubble
-                item={{
-                  id: msg._id,
-                  user: msg.senderId.displayName,
-                  avatarUrl: msg.senderId.avatarUrl,
-                  text: msg.deletedAt ? "Message deleted" : msg.text,
-                  mediaUrl: msg.mediaUrl ?? null,
-                  mediaUrls: msg.mediaUrls,
-                  mediaTypes: msg.mediaTypes,
-                  mine: currentUserId === msg.senderId._id,
-                  replyTo: msg.replyTo ?? null,
-                  reactions: groupReactions(msg.reactions, currentUserId),
-                }}
-                // A sending message has no server ID yet, so it can't be
-                // reacted to, replied to or opened until it's confirmed.
-                onOpenThread={!threadId && !msg.pending && (!msg.deletedAt || !!msg.replyCount) ? () => router.push(`/chat/${id}/thread/${msg._id}`) : undefined}
-                replyCount={msg.replyCount ?? 0}
-                onLongPress={msg.pending ? undefined : () => setActionTarget(msg)}
+                {...bubbleProps}
+                onLongPress={msg.pending ? undefined : (rect) => openActions(
+                  msg,
+                  rect,
+                  // The same message, drawn the same way, for the menu to show in place.
+                  <MessageBubble {...bubbleProps} onOpenThread={bubbleProps.onOpenThread && (() => {})} />
+                )}
                 onReact={msg.pending ? undefined : (emoji) => reactToMessage(msg._id, emoji)}
                 onPressUser={() => setProfileUser(msg.senderId)}
-                groupedWithPrevious={grouping.withPrevious}
-                groupedWithNext={grouping.withNext}
+                sending={!!msg.pending}
               />
               </SwipeToReply>
               </MessageEntrance>
@@ -1006,80 +1114,6 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
 
       {/* INPUT BAR */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        {actionTarget && (
-          <View style={styles.actionBar}>
-            <Text style={styles.actionTime}>{formatDayAndTime(actionTarget.createdAt)}</Text>
-            <View style={styles.actionTopRow}>
-              <View style={styles.actionEmojiRow}>
-                {actionReactionOptions.map((emoji) => (
-                  <TouchableOpacity
-                    key={emoji}
-                    style={[styles.actionEmojiButton, emoji === myActionReaction && styles.actionEmojiButtonSelected]}
-                    accessibilityLabel={emoji === myActionReaction ? `Remove ${emoji} reaction` : `React with ${emoji}`}
-                    onPress={() => {
-                      reactToMessage(actionTarget._id, emoji);
-                      setActionTarget(null);
-                    }}
-                  >
-                    <Text style={styles.actionEmoji}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity
-                  style={styles.actionEmojiButton}
-                  accessibilityLabel="More reactions"
-                  onPress={() => {
-                    setEmojiPickerTarget(actionTarget);
-                    setActionTarget(null);
-                  }}
-                >
-                  <Text style={styles.actionEmojiMore}>+</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={styles.actionCloseButton} onPress={() => setActionTarget(null)}>
-                <Text style={styles.actionCloseText}>×</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.actionButtonsRow}>
-              {/* Threads are hidden for now (inline replies instead); existing
-                  threads still open from their "N replies" link. */}
-              {!actionTarget.deletedAt && (
-                <TouchableOpacity
-                  style={styles.actionReplyButton}
-                  onPress={() => {
-                    const target = actionTarget;
-                    setActionTarget(null);
-                    startReply(target);
-                  }}
-                >
-                  <Text style={styles.actionReplyText}>Reply</Text>
-                </TouchableOpacity>
-              )}
-              {actionTarget.senderId._id !== currentUserId && (
-                <>
-                  <TouchableOpacity
-                    style={styles.actionReplyButton}
-                    onPress={() => {
-                      setReportTarget({ type: "message", id: actionTarget._id, name: actionTarget.senderId.displayName });
-                      setActionTarget(null);
-                    }}
-                  >
-                    <Text style={[styles.actionReplyText, { color: colors.danger }]}>Report</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionReplyButton}
-                    onPress={() => {
-                      const target = actionTarget;
-                      setActionTarget(null);
-                      blockUser(target);
-                    }}
-                  >
-                    <Text style={[styles.actionReplyText, { color: colors.danger }]}>Block</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </View>
-        )}
         {!!typingLabel && (
           <View style={styles.typingBar}>
             <Text style={styles.typingText}>{typingLabel}</Text>
@@ -1096,7 +1130,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             </TouchableOpacity>
           </View>
         )}
-        {pendingMedia.length > 0 && (
+        {(pendingMedia.length > 0 || preparingMedia) && (
           <View style={styles.photoPreviewBar}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoPreviewList}>
               {pendingMedia.map((item, index) => (
@@ -1119,7 +1153,28 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                   </TouchableOpacity>
                 </View>
               ))}
+              {preparingMedia && (
+                <View style={[styles.photoPreviewItem, styles.preparingItem]} accessibilityLabel="Preparing media">
+                  <ActivityIndicator color={colors.mutedText} />
+                  <Text style={styles.preparingText}>Preparing…</Text>
+                </View>
+              )}
             </ScrollView>
+          </View>
+        )}
+        {mentionSuggestions.length > 0 && !isMuted && (
+          <View style={styles.mentionList}>
+            {mentionSuggestions.map((member) => (
+              <TouchableOpacity
+                key={member._id}
+                style={styles.mentionRow}
+                onPress={() => pickMention(member)}
+                accessibilityLabel={`Mention ${member.displayName}`}
+              >
+                <Image source={member.avatarUrl ? { uri: member.avatarUrl } : undefined} style={styles.mentionAvatar} />
+                <Text style={styles.mentionName} numberOfLines={1}>{member.displayName}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         )}
         {isMuted ? (
@@ -1145,6 +1200,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               value={message}
               maxLength={4000}
               onChangeText={handleMessageChange}
+              onSelectionChange={(event) => setCursor(event.nativeEvent.selection.end)}
               // Grows to a few lines instead of scrolling sideways. On phones
               // Return adds a new line (send with the button); on web, Enter
               // sends and Shift+Enter adds a line.
@@ -1159,9 +1215,9 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             />
 
             <TouchableOpacity
-              style={[styles.sendBtn, (sending || (!message.trim() && pendingMedia.length === 0)) && styles.sendBtnDisabled]}
+              style={[styles.sendBtn, (sending || preparingMedia || (!message.trim() && pendingMedia.length === 0)) && styles.sendBtnDisabled]}
               onPress={sendMessage}
-              disabled={sending || (!message.trim() && pendingMedia.length === 0)}
+              disabled={sending || preparingMedia || (!message.trim() && pendingMedia.length === 0)}
               accessibilityLabel="Send message"
             >
               <Text style={styles.sendText}>➤</Text>
@@ -1184,6 +1240,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         onBlockedChange={handleBlockedChange}
       />
       <ReportModal target={reportTarget} onClose={() => setReportTarget(null)} />
+      {actionTarget && actionView && (
+        <MessageActionsOverlay
+          rect={actionView.rect}
+          mine={actionTarget.senderId._id === currentUserId}
+          message={actionView.bubble}
+          timeLabel={formatDayAndTime(actionTarget.createdAt)}
+          reactions={actionReactionOptions}
+          selectedReaction={myActionReaction}
+          onReact={(emoji) => reactToMessage(actionTarget._id, emoji)}
+          onMoreReactions={() => setEmojiPickerTarget(actionTarget)}
+          actions={messageActions(actionTarget)}
+          onClose={closeActions}
+        />
+      )}
       <ReactionEmojiPicker
         open={!!emojiPickerTarget}
         onClose={() => setEmojiPickerTarget(null)}
@@ -1345,6 +1415,16 @@ function makeStyles(colors: Colors) {
       overflow: "hidden",
       backgroundColor: colors.inputBg,
     },
+    preparingItem: {
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+    preparingText: {
+      fontFamily: fonts.regular,
+      fontSize: 11,
+      color: colors.mutedText,
+    },
     photoPreviewImage: {
       width: "100%",
       height: "100%",
@@ -1391,81 +1471,30 @@ function makeStyles(colors: Colors) {
       fontSize: 12,
       color: colors.mutedText,
     },
-    actionBar: {
-      gap: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+    mentionList: {
       borderTopWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.card,
+      paddingVertical: 4,
     },
-    actionTime: {
-      fontFamily: fonts.regular,
-      fontSize: 12,
-      color: colors.mutedText,
-      textAlign: "center",
-    },
-    actionTopRow: {
+    mentionRow: {
       flexDirection: "row",
       alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
     },
-    actionButtonsRow: {
-      flexDirection: "row",
-      gap: 8,
+    mentionAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.avatarBg,
     },
-    actionEmojiRow: {
-      flexDirection: "row",
+    mentionName: {
       flex: 1,
-    },
-    actionEmojiButton: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.inputBg,
-      marginRight: 4,
-    },
-    actionEmojiButtonSelected: {
-      borderWidth: 1.5,
-      borderColor: colors.brand,
-      backgroundColor: colors.brandSoft,
-    },
-    actionEmoji: {
-      fontFamily: fonts.regular,
-      fontSize: 16,
-    },
-    actionEmojiMore: {
       fontFamily: fonts.medium,
-      fontSize: 18,
-      color: colors.mutedText,
-    },
-    actionReplyButton: {
-      flex: 1,
-      minHeight: 34,
-      paddingHorizontal: 10,
-      borderRadius: 17,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.inputBg,
-    },
-    actionReplyText: {
-      fontSize: 13,
-      fontFamily: fonts.medium,
+      fontSize: 15,
       color: colors.text,
-    },
-    actionCloseButton: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      marginLeft: 6,
-    },
-    actionCloseText: {
-      fontFamily: fonts.regular,
-      fontSize: 20,
-      color: colors.mutedText,
     },
     typingBar: {
       paddingHorizontal: 16,

@@ -11,6 +11,7 @@ import { validateMessage, validateText } from '../utils/validation.js';
 import { sendPush } from '../utils/push.js';
 import { messageSendRateLimit, reactionRateLimit } from '../middleware/rateLimit.js';
 import { postingBlock } from '../utils/moderation.js';
+import { toggleReactionUpdate } from '../utils/reactions.js';
 
 const router = Router();
 const CHAT_LIST_DEFAULT_LIMIT = 20;
@@ -76,6 +77,7 @@ function populateMessage(query, chatId) {
   return query
     .populate('senderId', '_id displayName avatarUrl')
     .populate('reactions.userId', '_id displayName')
+    .populate('mentions', '_id displayName')
     .populate({ path: 'replyTo', match: { chatId }, populate: { path: 'senderId', select: '_id displayName' } });
 }
 
@@ -406,6 +408,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       .limit(limit + 1)
       .populate('senderId', '_id displayName avatarUrl')
       .populate('reactions.userId', '_id displayName')
+      .populate('mentions', '_id displayName')
       .populate({ path: 'replyTo', match: { chatId }, populate: { path: 'senderId', select: '_id displayName' } })
       .lean();
 
@@ -473,6 +476,10 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
       _id: threadRootId, chatId, deletedAt: null, threadRootId: null,
       senderId: { $nin: req.user.blockedUsers || [] },
     }))) return res.status(400).json({ error: 'Thread must reference a visible top-level message in this chat' });
+    // Only other members of this chat can be mentioned.
+    const mentions = [...new Set((req.body.mentions || []).map(String))].filter((mentionId) =>
+      mentionId !== req.user._id.toString() && chat.members.some((memberId) => memberId.toString() === mentionId)
+    );
     const cleanedMediaUrls = Array.isArray(mediaUrls)
       ? mediaUrls.filter((url) => typeof url === 'string' && url.trim()).map((url) => url.trim())
       : [];
@@ -495,6 +502,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
       mediaTypes: cleanedMediaTypes.slice(0, cleanedMediaUrls.length),
       ...(threadRootId ? { threadRootId } : {}),
       ...(replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? { replyTo } : {}),
+      ...(mentions.length ? { mentions } : {}),
     });
 
     // Update the chat's lastMessageAt
@@ -524,25 +532,39 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
     if (recipients.length > 0) {
       const isReply = !!(populated.replyTo || populated.threadRootId);
       const isClassChat = !!chat.course;
+      const mentioned = new Set(mentions);
+      const isMentioned = (u) => mentioned.has(u._id.toString());
 
+      // Mentioned people are told even with class or reply notifications off
+      // (the master switch, blocks and bans still apply, via the query above).
       const eligibleTokens = recipients
         .filter((u) => {
+          if (isMentioned(u)) return false;
           if (isReply && u.replyNotif === false) return false;
           if (isClassChat && u.classNotif === false) return false;
           return true;
         })
         .map((u) => u.pushToken);
+      const mentionTokens = recipients.filter(isMentioned).map((u) => u.pushToken);
 
+      const senderName = req.user.displayName || 'Someone';
+      const preview = populated.text || '📎 Media';
+      // Direct message chats are all named 'Direct message', so the sender is
+      // the only useful title there; group chats lead with the chat name.
+      const isDirect = chat.isGroup === false;
+      const data = { chatId, ...(threadRootId ? { threadId: threadRootId } : {}) };
       if (eligibleTokens.length > 0) {
-        const senderName = req.user.displayName || 'Someone';
-        const preview = populated.text || '📎 Media';
-        // Direct message chats are all named 'Direct message', so the sender is
-        // the only useful title there; group chats lead with the chat name.
-        const isDirect = chat.isGroup === false;
         sendPush(eligibleTokens, {
           title: isDirect ? senderName : chatNotificationTitle(chat),
           body: isDirect ? preview : `${senderName}: ${preview}`,
-          data: { chatId, ...(threadRootId ? { threadId: threadRootId } : {}) },
+          data,
+        });
+      }
+      if (mentionTokens.length > 0) {
+        sendPush(mentionTokens, {
+          title: isDirect ? `${senderName} mentioned you` : `${senderName} mentioned you in ${chatNotificationTitle(chat)}`,
+          body: preview,
+          data,
         });
       }
     }
@@ -606,22 +628,13 @@ router.post('/:chatId/messages/:id/react', requireAuth, reactionRateLimit, async
       return res.status(400).json({ error: 'Cannot react to a deleted message' });
     }
 
-    // One reaction per person (like Instagram): reacting with the same emoji
-    // removes it, and a different emoji replaces your old one. Clearing all of
-    // the user's reactions also collapses any duplicates from before this rule.
-    const userId = req.user._id.toString();
-    const alreadyReactedWithThis = message.reactions.some(
-      (reaction) => reaction.emoji === emoji && reaction.userId.toString() === userId
+    const result = await Message.updateOne(
+      { _id: message._id, deletedAt: null },
+      toggleReactionUpdate(req.user._id, emoji)
     );
-
-    message.reactions = message.reactions.filter(
-      (reaction) => reaction.userId.toString() !== userId
-    );
-    if (!alreadyReactedWithThis) {
-      message.reactions.push({ emoji, userId: req.user._id });
+    if (!result.matchedCount) {
+      return res.status(400).json({ error: 'Cannot react to a deleted message' });
     }
-
-    await message.save();
 
     const populated = await populateMessage(Message.findById(message._id), chatId).lean();
 

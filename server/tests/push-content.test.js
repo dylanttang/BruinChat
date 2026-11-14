@@ -78,3 +78,43 @@ test('a media-only message still names the sender in a group chat', async () => 
   assert.equal(res.status, 201);
   assert.equal(pushed[0].body, 'Jonathan: 📎 Media');
 });
+
+test('a mentioned member is told even with class notifications off, in their own notification', async () => {
+  const quietId = 'ffffffffffffffffffffffff';
+  const quietToken = 'ExponentPushToken[cccccccccccccccccccccc]';
+  chat = { ...chat, members: [userId, memberId, quietId] };
+  User.find = () => chain([
+    { _id: memberId, pushToken: token, classNotif: true, replyNotif: true },
+    { _id: quietId, pushToken: quietToken, classNotif: false, replyNotif: true },
+  ]);
+  let created;
+  Message.create = async doc => { created = doc; return { ...doc, _id: messageId, createdAt: new Date() }; };
+  const res = await request(`/api/chats/${chatId}/messages`, {
+    method: 'POST', headers, body: { text: '@Quiet are we meeting at powell today?', mentions: [quietId] },
+  });
+  assert.equal(res.status, 201);
+  assert.deepEqual(created.mentions, [quietId]);
+  assert.equal(pushed.length, 2);
+  const normal = pushed.find(p => p.to === token);
+  const mention = pushed.find(p => p.to === quietToken);
+  assert.equal(normal.title, 'MATH 32B');
+  assert.equal(mention.title, 'Jonathan mentioned you in MATH 32B');
+  assert.equal(mention.body, 'are we meeting at powell today?');
+});
+
+test('mentions of yourself or of people outside the chat are dropped', async () => {
+  let created;
+  Message.create = async doc => { created = doc; return { ...doc, _id: messageId, createdAt: new Date() }; };
+  const res = await request(`/api/chats/${chatId}/messages`, {
+    method: 'POST', headers, body: { text: 'hi', mentions: [userId, '999999999999999999999999'] },
+  });
+  assert.equal(res.status, 201);
+  assert.equal(created.mentions, undefined);
+});
+
+test('too many mentions are rejected', async () => {
+  const res = await request(`/api/chats/${chatId}/messages`, {
+    method: 'POST', headers, body: { text: 'hi', mentions: Array.from({ length: 11 }, (_, i) => i.toString(16).padStart(24, '0')) },
+  });
+  assert.equal(res.status, 400);
+});

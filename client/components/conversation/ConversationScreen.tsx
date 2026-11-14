@@ -48,6 +48,7 @@ import MessageActionsOverlay, { type MessageAction } from "./MessageActionsOverl
 import type { Rect } from "../../lib/mediaLayout";
 import { markChatSeen, newestMessageAt } from "../../lib/readState";
 import { keepLoadedMedia } from "../../lib/stableMedia";
+import { insertMention, matchMembers, mentionQuery, mentionsInText, type Mentionable } from "../../lib/mentions";
 
 const REACTION_OPTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const TYPING_IDLE_MS = 1800;
@@ -183,6 +184,7 @@ type Message = {
   replyCount?: number;
   deletedAt?: string | null;
   reactions?: Reaction[];
+  mentions?: Mentionable[];
   // Set on our own message while it's still sending. clientKey stays on the
   // row after the server confirms it, so the row keeps its list key and
   // doesn't remount (or re-animate) when the real message replaces it.
@@ -293,7 +295,7 @@ type Chat = {
   _id: string;
   name: string;
   isGroup?: boolean;
-  members: { _id: string; displayName: string }[];
+  members: { _id: string; displayName: string; avatarUrl?: string }[];
 };
 
 function formatTime(iso: string): string {
@@ -390,6 +392,10 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
+  // Where the cursor is, for @mention suggestions, and who's been picked
+  // from them for the message being written.
+  const [cursor, setCursor] = useState(0);
+  const [pickedMentions, setPickedMentions] = useState<Mentionable[]>([]);
   // The picker can take a while to hand back a video (it converts it first),
   // so the composer shows that something is coming.
   const [preparingMedia, setPreparingMedia] = useState(false);
@@ -809,6 +815,8 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     // typing while this one sends; put it back if the send fails.
     const media = pendingMedia;
     const reply = replyingTo;
+    const picked = pickedMentions;
+    const mentions = mentionsInText(text, picked);
     // Show the message right away (marked as sending) instead of waiting for
     // the upload and the server, like iMessage and Instagram do.
     const clientKey = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -825,6 +833,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
         createdAt: new Date().toISOString(),
         senderId: me,
         replyTo: reply,
+        mentions,
         ...(threadId ? { threadRootId: threadId } : {}),
       }, ...prev]);
     }
@@ -832,6 +841,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
     setMessage("");
     setPendingMedia([]);
     setReplyingTo(null);
+    setPickedMentions([]);
     stopTyping();
     try {
       const mediaUrls = [];
@@ -844,6 +854,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
           text, mediaUrls, mediaTypes: media.map(item => item.type),
           ...(threadId ? { threadRootId: threadId } : {}),
           ...(reply ? { replyTo: reply._id } : {}),
+          ...(mentions.length ? { mentions: mentions.map((member) => member._id) } : {}),
         }),
       });
       const data = await response.json();
@@ -855,6 +866,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
       setMessage(current => current || text);
       setPendingMedia(current => current.length ? current : media);
       setReplyingTo(current => current ?? reply);
+      setPickedMentions(current => current.length ? current : picked);
       if (err?.code === "MUTED") {
         setMutedUntil(new Date(err.mutedUntil));
       } else if (err?.code === "BANNED") {
@@ -948,6 +960,20 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
   const actionReactionOptions = myActionReaction && !REACTION_OPTIONS.includes(myActionReaction)
     ? [myActionReaction, ...REACTION_OPTIONS]
     : REACTION_OPTIONS;
+
+  // Typing "@" in a group chat suggests its members.
+  const mentionable = chat?.isGroup === false
+    ? []
+    : (chat?.members ?? []).filter((member) => member._id !== currentUserId && !blockedIds.has(member._id));
+  const activeMention = mentionable.length ? mentionQuery(message, Math.min(cursor, message.length)) : null;
+  const mentionSuggestions = activeMention ? matchMembers(mentionable, activeMention.query) : [];
+  const pickMention = (member: (typeof mentionable)[number]) => {
+    if (!activeMention) return;
+    const next = insertMention(message, activeMention.start, Math.min(cursor, message.length), member.displayName);
+    handleMessageChange(next.text);
+    setCursor(next.cursor);
+    setPickedMentions((prev) => [...prev, { _id: member._id, displayName: member.displayName }]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1046,6 +1072,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
                 mine: currentUserId === msg.senderId._id,
                 replyTo: msg.replyTo ?? null,
                 reactions: groupReactions(msg.reactions, currentUserId),
+                mentionNames: msg.mentions?.map((member) => member.displayName),
               },
               // A sending message has no server ID yet, so it can't be
               // reacted to, replied to or opened until it's confirmed.
@@ -1135,6 +1162,21 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
             </ScrollView>
           </View>
         )}
+        {mentionSuggestions.length > 0 && !isMuted && (
+          <View style={styles.mentionList}>
+            {mentionSuggestions.map((member) => (
+              <TouchableOpacity
+                key={member._id}
+                style={styles.mentionRow}
+                onPress={() => pickMention(member)}
+                accessibilityLabel={`Mention ${member.displayName}`}
+              >
+                <Image source={member.avatarUrl ? { uri: member.avatarUrl } : undefined} style={styles.mentionAvatar} />
+                <Text style={styles.mentionName} numberOfLines={1}>{member.displayName}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
         {isMuted ? (
           <View style={styles.mutedBar}>
             <Text style={styles.mutedTitle}>You're muted</Text>
@@ -1158,6 +1200,7 @@ export default function ConversationScreen({ chatId: id, threadId }: { chatId: s
               value={message}
               maxLength={4000}
               onChangeText={handleMessageChange}
+              onSelectionChange={(event) => setCursor(event.nativeEvent.selection.end)}
               // Grows to a few lines instead of scrolling sideways. On phones
               // Return adds a new line (send with the button); on web, Enter
               // sends and Shift+Enter adds a line.
@@ -1427,6 +1470,31 @@ function makeStyles(colors: Colors) {
       fontFamily: fonts.regular,
       fontSize: 12,
       color: colors.mutedText,
+    },
+    mentionList: {
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      paddingVertical: 4,
+    },
+    mentionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    mentionAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.avatarBg,
+    },
+    mentionName: {
+      flex: 1,
+      fontFamily: fonts.medium,
+      fontSize: 15,
+      color: colors.text,
     },
     typingBar: {
       paddingHorizontal: 16,

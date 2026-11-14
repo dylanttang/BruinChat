@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme, fonts, Colors } from "../../context/ThemeContext";
 import { messageMedia, type MediaKind } from "../../lib/messageMedia";
 import type { Rect } from "../../lib/mediaLayout";
+import { splitMentions } from "../../lib/mentions";
 import ChatMedia from "./ChatMedia";
 
 type ReplyMessage = {
@@ -28,6 +29,8 @@ type Props = {
     replyTo?: ReplyMessage | null;
     // names: who reacted with this emoji ("You" first), for the reactions sheet.
     reactions?: { emoji: string; count: number; reactedByMe: boolean; names: string[] }[];
+    // Names @mentioned in the text, drawn in bold.
+    mentionNames?: string[];
   };
   // Gets where the message is on screen, so the long-press menu can show it in place.
   onLongPress?: (rect: Rect | null) => void;
@@ -163,7 +166,11 @@ export default function MessageBubble({
       {replyPreview}
       {hasText && (
         <Text style={[styles.messageText, styles.onGradientText]}>
-          {item.text}
+          {item.mentionNames?.length
+            ? splitMentions(item.text, item.mentionNames).map((part, index) =>
+                part.mention ? <Text key={index} style={styles.mention}>{part.text}</Text> : part.text
+              )
+            : item.text}
         </Text>
       )}
     </LinearGradient>
@@ -385,6 +392,9 @@ function makeStyles(colors: Colors) {
       fontSize: 16,
       lineHeight: 21,
       color: colors.text,
+    },
+    mention: {
+      fontFamily: fonts.bold,
     },
     onGradientText: {
       color: colors.bubbleText,

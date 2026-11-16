@@ -32,7 +32,7 @@ git switch -c yourname/short-description   # create your branch
 `yourname/short-description`: lowercase, words separated by hyphens.
 
 - `mark/archive-button`
-- `catherine/about-screen`
+- `katherine/about-screen`
 - `jacob/fix-reaction-race`
 - `eusern/github-actions`
 

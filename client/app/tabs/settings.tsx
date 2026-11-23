@@ -201,13 +201,21 @@ export default function Settings() {
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.row, styles.lastRow]}
+            style={styles.row}
             onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
           >
             <View>
               <Text style={styles.rowText}>Contact us</Text>
               <Text style={styles.rowSubtext}>{SUPPORT_EMAIL}</Text>
             </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.row, styles.lastRow]}
+            accessibilityRole="button"
+            onPress={() => router.push("/about")}
+          >
+            <Text style={styles.rowText}>About BChat</Text>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
         </View>

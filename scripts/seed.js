@@ -5,6 +5,8 @@
 //   npm run db:start                     # local MongoDB in Docker
 //   npm run db:seed                      # wipe and seed
 //   npm run db:seed -- --me you@g.ucla.edu
+//   npm run db:seed -- --legacy          # chats without `kind`, to rehearse
+//                                        # scripts/backfillChatKind.js
 //
 // --me: sign in once with Google against the local server first, then seed
 // with your email. Your account is kept, joined to the seeded classes, the
@@ -61,6 +63,8 @@ async function main() {
   const { CURRENT_TERMS_VERSION } = await import('../server/utils/terms.js');
 
   const conn = await connectDB();
+  const legacy = process.argv.includes('--legacy');
+  const kind = (value) => (legacy ? {} : { kind: value });
   const myEmail = argValue('--me')?.toLowerCase() || null;
   const me = myEmail ? await User.findOne({ email: myEmail }) : null;
   if (myEmail && !me) {
@@ -101,6 +105,7 @@ async function main() {
     if (me && index <= 1) members.push(me._id);
     classChats.push(await Chat.create({
       name: `${course.subjectArea} ${course.number} — ${course.title}`,
+      ...kind('class'),
       isGroup: true,
       course: course._id,
       members,
@@ -111,6 +116,7 @@ async function main() {
 
   const team = await Chat.create({
     name: 'BChat Team',
+    ...kind('team'),
     isGroup: true,
     members: [...users.filter((user) => !user.bannedAt).map((user) => user._id), ...(me ? [me._id] : [])],
     createdBy: byName.ana._id,
@@ -120,6 +126,7 @@ async function main() {
   const dmMembers = [byName.ana._id, me ? me._id : byName.ben._id].map(String).sort();
   const dm = await Chat.create({
     name: 'Direct message',
+    ...kind('direct'),
     isGroup: false,
     directKey: dmMembers.join(':'),
     members: dmMembers,
@@ -144,7 +151,7 @@ async function main() {
     await Chat.updateOne({ _id: chat._id }, { $set: { lastMessageAt: message.createdAt } });
   }
 
-  console.log('Seed complete.\n');
+  console.log(`Seed complete${legacy ? ' (legacy: chats have no kind)' : ''}.\n`);
   console.log(`Courses (term ${term}): ${courses.map((c) => `${c.subjectArea} ${c.number}`).join(', ')}`);
   console.log('People:');
   for (const user of users) console.log(`- ${user.displayName} (@${user.username}) id=${user._id}`);

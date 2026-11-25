@@ -96,6 +96,7 @@ async function ensureDemoChat(user) {
   const start = Date.now() - DEMO_MESSAGES.length * 60_000;
   const chat = await Chat.create({
     name: DEMO_CHAT_NAME,
+    kind: 'team',
     isGroup: true,
     members: [user._id, ...classmates.map((c) => c._id)],
     createdBy: user._id,

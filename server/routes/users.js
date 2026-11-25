@@ -127,6 +127,7 @@ router.put('/me/courses', requireAuth, enrollmentRateLimit, async (req, res) => 
         {
           $setOnInsert: {
             name: chatName,
+            kind: 'class',
             isGroup: true,
             course: course._id,
             createdBy: user._id,

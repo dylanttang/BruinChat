@@ -6,7 +6,10 @@
     "server": "cd server && npm run dev",
     "client": "cd client && npx expo start",
     "install:all": "cd server && npm install && cd ../client && npm install",
-    "legal:sync": "node scripts/syncLegal.js"
+    "legal:sync": "node scripts/syncLegal.js",
+    "db:start": "docker start bchat-mongo 2>/dev/null || docker run -d --name bchat-mongo -p 127.0.0.1:27017:27017 -v bchat-mongo:/data/db mongo:7",
+    "db:stop": "docker stop bchat-mongo",
+    "db:seed": "NODE_PATH=server/node_modules node scripts/seed.js --wipe"
   },
   "keywords": [],
   "author": "",

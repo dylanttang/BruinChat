@@ -37,7 +37,7 @@ function chatNotificationTitle(chat) {
 }
 
 async function directRecipientAvailable(chat, user) {
-  if (chat.isGroup !== false) return true;
+  if (Chat.kindOf(chat) !== 'direct') return true;
   const recipientId = chat.members.find(id => String(id) !== String(user._id));
   if (!recipientId || (user.blockedUsers || []).some(id => String(id) === String(recipientId))) return false;
   return Boolean(await User.exists({
@@ -219,7 +219,7 @@ router.post('/direct', requireAuth, messageSendRateLimit, async (req, res) => {
     if (!chat) {
       try {
         chat = await Chat.findOneAndUpdate({ directKey }, { $setOnInsert: {
-          directKey, members, isGroup: false, name: 'Direct message', createdBy: req.user._id,
+          directKey, members, kind: 'direct', isGroup: false, name: 'Direct message', createdBy: req.user._id,
         } }, { upsert: true, new: true, runValidators: true }).lean();
       } catch (error) {
         if (error.code !== 11000) throw error;
@@ -531,7 +531,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
 
     if (recipients.length > 0) {
       const isReply = !!(populated.replyTo || populated.threadRootId);
-      const isClassChat = !!chat.course;
+      const isClassChat = Chat.kindOf(chat) === 'class';
       const mentioned = new Set(mentions);
       const isMentioned = (u) => mentioned.has(u._id.toString());
 
@@ -551,7 +551,7 @@ router.post('/:id/messages', requireAuth, messageSendRateLimit, async (req, res)
       const preview = populated.text || '📎 Media';
       // Direct message chats are all named 'Direct message', so the sender is
       // the only useful title there; group chats lead with the chat name.
-      const isDirect = chat.isGroup === false;
+      const isDirect = Chat.kindOf(chat) === 'direct';
       const data = { chatId, ...(threadRootId ? { threadId: threadRootId } : {}) };
       if (eligibleTokens.length > 0) {
         sendPush(eligibleTokens, {
@@ -672,7 +672,7 @@ router.delete('/:id/members/me', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'You are not a member of this chat' });
     }
 
-    if (chat.isGroup === false) return res.status(400).json({ error: 'Archive direct messages instead of leaving them' });
+    if (Chat.kindOf(chat) === 'direct') return res.status(400).json({ error: 'Archive direct messages instead of leaving them' });
 
     // Remove user
     chat.members = chat.members.filter((memberId) => memberId.toString() !== userIdStr);

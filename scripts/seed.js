@@ -47,14 +47,22 @@ function argValue(flag) {
   return index === -1 ? null : process.argv[index + 1] || null;
 }
 
+// Only a MongoDB on this computer, like the one `npm run db:start` runs.
+function isLocalUri(uri) {
+  const match = /^mongodb:\/\/(?:[^@/]*@)?([^/?]+)/.exec(uri || '');
+  if (!match) return false; // mongodb+srv:// is always a remote cluster
+  return match[1].split(',').every((host) => /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host));
+}
+
 async function main() {
-  // This deletes EVERY user, chat and message. Only allow it on a database
-  // whose name marks it as dev/test, and only when --wipe is passed.
+  // This deletes EVERY user, chat and message. Only allow it on a database on
+  // this computer whose name marks it as dev/test, and only with --wipe.
   const dbName = process.env.MONGODB_DB || '';
-  if (!process.argv.includes('--wipe') || !/dev|test/i.test(dbName)) {
+  if (!process.argv.includes('--wipe') || !/dev|test/i.test(dbName) || !isLocalUri(process.env.MONGODB_URI)) {
     console.error(
       `Refusing to seed: this deletes ALL users, chats and messages in "${dbName || '(the database in MONGODB_URI)'}".\n` +
-      'Only run it against a development database: set MONGODB_DB to a name containing "dev" or "test" and pass --wipe.'
+      'Only run it against a local development database: MONGODB_URI=mongodb://127.0.0.1:27017 (npm run db:start), ' +
+      'MONGODB_DB containing "dev" or "test", and --wipe.'
     );
     process.exit(1);
   }
@@ -69,6 +77,12 @@ async function main() {
   const me = myEmail ? await User.findOne({ email: myEmail }) : null;
   if (myEmail && !me) {
     throw new Error(`No user with email ${myEmail}. Sign in once with Google against the local server, then run this again.`);
+  }
+  // Check before deleting anything: your kept account can't share a
+  // username with a fake classmate.
+  const fakeUsernames = [...PEOPLE.map(([username]) => username), 'deleted-hal'];
+  if (me && fakeUsernames.includes(me.username)) {
+    throw new Error(`Your username "${me.username}" matches a fake classmate. Rename one in scripts/seed.js, then run this again.`);
   }
 
   console.log(`Seeding ${dbName}...`);

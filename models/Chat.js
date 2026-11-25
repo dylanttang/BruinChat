@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 // What a chat is. Older chats have no kind until scripts/backfillChatKind.js
-// runs; Chat.kindOf() falls back to the rule that backfill uses.
+// runs; Chat.kindOf() falls back to the same rule the backfill uses.
 //   class  — one per course, members come from enrollment
 //   direct — two people
 //   group  — a group DM people made themselves (#116)
@@ -37,12 +37,14 @@ chatSchema.index(
 );
 
 // The kind of a chat, stored or (for chats not backfilled yet) inferred the
-// way the app always has: a course means class, isGroup false means direct,
-// anything else is a team chat. Group DMs are always created with a kind.
+// way the app always has: isGroup false means direct (the app shows it as a
+// DM, so DM protections must apply even if a course is somehow set), a course
+// means class, anything else is a team chat. Group DMs are always created
+// with a kind.
 chatSchema.statics.kindOf = function kindOf(chat) {
   if (chat?.kind) return chat.kind;
-  if (chat?.course) return 'class';
   if (chat?.isGroup === false) return 'direct';
+  if (chat?.course) return 'class';
   return 'team';
 };
 chatSchema.statics.KINDS = CHAT_KINDS;

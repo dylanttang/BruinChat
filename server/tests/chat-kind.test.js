@@ -33,7 +33,7 @@ async function legacyChats(ana, ben, cs35l) {
 test('kindOf uses the stored kind, else the rule the app has always used', () => {
   assert.equal(Chat.kindOf({ kind: 'group', isGroup: true }), 'group');
   assert.equal(Chat.kindOf({ course: 'c', isGroup: true }), 'class');
-  assert.equal(Chat.kindOf({ course: 'c', isGroup: false }), 'class');
+  assert.equal(Chat.kindOf({ course: 'c', isGroup: false }), 'direct');
   assert.equal(Chat.kindOf({ isGroup: false }), 'direct');
   assert.equal(Chat.kindOf({ isGroup: true }), 'team');
   assert.equal(Chat.kindOf({}), 'team');
@@ -87,6 +87,20 @@ test('messages send in chats without a kind, and DM block checks still apply', a
   assert.equal((await send(ana, classChat)).status, 201);
 });
 
+test('an old chat the app shows as a DM keeps DM rules even if it has a course', async () => {
+  const [ana, ben, cs35l] = [await makeUser(), await makeUser(), await course()];
+  const mixed = (await Chat.collection.insertOne({
+    name: 'Direct message', isGroup: false, course: cs35l._id, members: [ana._id, ben._id], createdBy: ana._id, archivedBy: [], lastMessageAt: null,
+  })).insertedId;
+  await ben.updateOne({ $set: { blockedUsers: [ana._id] } });
+
+  const sent = await request(`/api/chats/${mixed}/messages`, { method: 'POST', headers: authHeaders(ana), body: { text: 'hi' } });
+  assert.equal(sent.status, 403);
+  const left = await request(`/api/chats/${mixed}/members/me`, { method: 'DELETE', headers: authHeaders(ana) });
+  assert.equal(left.status, 400);
+  assert.equal((await Chat.findById(mixed).lean()).members.length, 2);
+});
+
 test('chats without a kind can be left, except DMs', async () => {
   const [ana, ben, cs35l] = [await makeUser(), await makeUser(), await course()];
   const { dm, team } = await legacyChats(ana, ben, cs35l);
@@ -119,7 +133,7 @@ test('backfill labels every old shape, keeps other fields, and is safe to rerun'
   assert.equal(result.remaining, 0);
   const kinds = Object.fromEntries((await Chat.find().lean()).map((chat) => [String(chat._id), chat.kind]));
   assert.deepEqual(kinds, {
-    [String(classChat)]: 'class', [String(dm)]: 'direct', [String(team)]: 'team', [String(odd)]: 'class', [String(labeled._id)]: 'team',
+    [String(classChat)]: 'class', [String(dm)]: 'direct', [String(team)]: 'team', [String(odd)]: 'direct', [String(labeled._id)]: 'team',
   });
 
   for (const old of before) {

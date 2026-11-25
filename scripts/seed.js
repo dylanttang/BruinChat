@@ -1,9 +1,49 @@
-require('dotenv').config();
+// Fills a local dev database with fake classmates, class chats, a DM and a
+// team chat, including the awkward cases (blocked, banned, deleted, not a
+// classmate) so features can be tested by hand.
+//
+//   npm run db:start                     # local MongoDB in Docker
+//   npm run db:seed                      # wipe and seed
+//   npm run db:seed -- --me you@g.ucla.edu
+//
+// --me: sign in once with Google against the local server first, then seed
+// with your email. Your account is kept, joined to the seeded classes, the
+// team chat and a DM, so you see real-looking data when you sign in.
+require('dotenv').config({
+  path: require('path').resolve(__dirname, '../server/.env'),
+});
 const mongoose = require('mongoose');
 const { connectDB } = require('../config/db');
 const User = require('../models/User');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
+const Course = require('../models/Course');
+
+const COURSES = [
+  ['COM SCI', '35L', 'Software Construction'],
+  ['MATH', '32B', 'Calculus of Several Variables'],
+  ['PHYSICS', '1A', 'Physics for Scientists and Engineers: Mechanics'],
+  ['STATS', '10', 'Introduction to Statistical Reasoning'],
+];
+
+// username, display name, course indexes, extra fields
+const PEOPLE = [
+  ['ana', 'Ana Lopez', [0, 1]],
+  ['ben', 'Ben Park', [0, 1, 2]],
+  ['cam', 'Cam Nguyen', [0, 2]],
+  ['dee', 'Dee Shah', [1, 2]],
+  ['eli', 'Eli Brooks', [0]],
+  ['fay', 'Fay Kim', [1]],
+  ['gus', 'Gus Banned', [0], { bannedAt: new Date() }],
+  ['ivy', 'Ivy (Ana blocked her)', [0]],
+  ['jay', 'Jay (blocked Ana)', [0]],
+  ['kim', 'Kim (no shared class with Ana)', [3]],
+];
+
+function argValue(flag) {
+  const index = process.argv.indexOf(flag);
+  return index === -1 ? null : process.argv[index + 1] || null;
+}
 
 async function main() {
   // This deletes EVERY user, chat and message. Only allow it on a database
@@ -16,74 +56,109 @@ async function main() {
     );
     process.exit(1);
   }
+  const term = process.env.CURRENT_TERM;
+  if (!term) throw new Error('Set CURRENT_TERM in server/.env (e.g. 26F) so seeded courses show in the picker.');
+  const { CURRENT_TERMS_VERSION } = await import('../server/utils/terms.js');
 
   const conn = await connectDB();
+  const myEmail = argValue('--me')?.toLowerCase() || null;
+  const me = myEmail ? await User.findOne({ email: myEmail }) : null;
+  if (myEmail && !me) {
+    throw new Error(`No user with email ${myEmail}. Sign in once with Google against the local server, then run this again.`);
+  }
 
-  console.log('Seeding database...');
-
-  // Dev-friendly: wipe these collections
-  await Promise.all([User.deleteMany({}), Chat.deleteMany({}), Message.deleteMany({})]);
-
-  const users = await User.insertMany([
-    { username: 'mark', displayName: 'Mark' },
-    { username: 'ariana', displayName: 'Ariana' },
-    { username: 'alyssa', displayName: 'Alyssa' },
-    { username: 'jacob', displayName: 'Jacob' },
-    { username: 'jonathan', displayName: 'Jonathan' },
-    { username: 'lucas', displayName: 'Lucas' },
-    { username: 'michelle', displayName: 'Michelle' },
-    { username: 'dummy', displayName: 'Dummy (test)' },
+  console.log(`Seeding ${dbName}...`);
+  await Promise.all([
+    User.deleteMany(me ? { _id: { $ne: me._id } } : {}),
+    Chat.deleteMany({}),
+    Message.deleteMany({}),
+    Course.deleteMany({ term }),
   ]);
 
-  const [mark, ariana, alyssa, jacob, jonathan, lucas, michelle, dummy] = users;
+  const courses = await Course.insertMany(COURSES.map(([subjectArea, number, title]) => ({ subjectArea, number, title, term })));
+  const accepted = { termsVersion: CURRENT_TERMS_VERSION, termsAcceptedAt: new Date() };
+  const users = await User.insertMany(PEOPLE.map(([username, displayName, courseIndexes, extra]) => ({
+    username, displayName, courses: courseIndexes.map((i) => courses[i]._id), ...accepted, ...extra,
+  })));
+  const byName = Object.fromEntries(users.map((user) => [user.username, user]));
+  const deleted = await User.create({ username: 'deleted-hal', displayName: 'Deleted user', deletedAt: new Date() });
 
-  const groupChat = await Chat.create({
-    name: 'BChat Dev Team',
-    isGroup: true,
-    members: users.map((u) => u._id),
-    createdBy: mark._id,
-    lastMessageAt: new Date(),
-  });
+  await User.updateOne({ _id: byName.ana._id }, { $set: { blockedUsers: [byName.ivy._id] } });
+  await User.updateOne({ _id: byName.jay._id }, { $set: { blockedUsers: [byName.ana._id] } });
+  if (me) {
+    await User.updateOne({ _id: me._id }, { $set: { courses: [courses[0]._id, courses[1]._id], blockedUsers: [], ...accepted } });
+  }
 
-  // Second chat — backend crew (for testing per-user chat listing)
-  const groupChat2 = await Chat.create({
-    name: 'Backend Squad',
-    isGroup: true,
-    members: [mark._id, jacob._id, lucas._id, jonathan._id],
-    createdBy: mark._id,
-    lastMessageAt: new Date(),
-  });
-
+  // Class chats, shaped like PUT /api/users/me/courses creates them.
   const now = Date.now();
-  const messages = await Message.insertMany([
-    { chatId: groupChat._id, senderId: mark._id, text: 'Welcome to BChat!', createdAt: new Date(now - 60_000), updatedAt: new Date(now - 60_000) },
-    { chatId: groupChat._id, senderId: michelle._id, text: 'Hyped to ship this 🎉', createdAt: new Date(now - 45_000), updatedAt: new Date(now - 45_000) },
-    { chatId: groupChat._id, senderId: jacob._id, text: 'Chat endpoints are live ✅', createdAt: new Date(now - 30_000), updatedAt: new Date(now - 30_000) },
-    { chatId: groupChat._id, senderId: ariana._id, text: 'Dark mode also live!', createdAt: new Date(now - 15_000), updatedAt: new Date(now - 15_000) },
-  ]);
+  const at = (minutesAgo) => new Date(now - minutesAgo * 60_000);
+  const classChats = [];
+  for (const [index, course] of courses.entries()) {
+    const members = PEOPLE.filter(([, , courseIndexes, extra]) => courseIndexes.includes(index) && !extra?.bannedAt)
+      .map(([username]) => byName[username]._id);
+    // Banned users stay members of their class chats; they just can't post.
+    if (index === 0) members.push(byName.gus._id);
+    if (me && index <= 1) members.push(me._id);
+    classChats.push(await Chat.create({
+      name: `${course.subjectArea} ${course.number} — ${course.title}`,
+      isGroup: true,
+      course: course._id,
+      members,
+      createdBy: members[0],
+      lastMessageAt: null,
+    }));
+  }
 
-  const messages2 = await Message.insertMany([
-    { chatId: groupChat2._id, senderId: jacob._id, text: 'Should we add WebSockets next?', createdAt: new Date(now - 20_000), updatedAt: new Date(now - 20_000) },
-    { chatId: groupChat2._id, senderId: mark._id, text: 'After OAuth lands.', createdAt: new Date(now - 10_000), updatedAt: new Date(now - 10_000) },
-  ]);
+  const team = await Chat.create({
+    name: 'BChat Team',
+    isGroup: true,
+    members: [...users.filter((user) => !user.bannedAt).map((user) => user._id), ...(me ? [me._id] : [])],
+    createdBy: byName.ana._id,
+    lastMessageAt: null,
+  });
 
-  await Chat.updateOne({ _id: groupChat._id }, { $set: { lastMessageAt: messages[messages.length - 1].createdAt } });
-  await Chat.updateOne({ _id: groupChat2._id }, { $set: { lastMessageAt: messages2[messages2.length - 1].createdAt } });
+  const dmMembers = [byName.ana._id, me ? me._id : byName.ben._id].map(String).sort();
+  const dm = await Chat.create({
+    name: 'Direct message',
+    isGroup: false,
+    directKey: dmMembers.join(':'),
+    members: dmMembers,
+    createdBy: byName.ana._id,
+    lastMessageAt: null,
+  });
 
-  console.log('Seed complete.');
-  console.log('Users:');
-  for (const u of users) console.log(`- ${u.displayName} (@${u.username}) id=${u._id}`);
-  console.log(`Chat: ${groupChat.name} id=${groupChat._id}`);
-  console.log(`Chat: ${groupChat2.name} id=${groupChat2._id}`);
+  const messages = [
+    [classChats[0], 'ben', 'Anyone started the shell scripting lab?', 50],
+    [classChats[0], 'cam', 'Halfway. The sed part is rough', 45],
+    [classChats[0], 'ivy', 'Office hours moved to 3pm today', 40],
+    [classChats[0], 'jay', 'Thanks Ivy!', 38],
+    [classChats[1], 'dee', 'Is the midterm cumulative?', 30],
+    [classChats[1], 'fay', 'Just chapters 15 and 16 I think', 28],
+    [classChats[2], 'cam', 'Problem 4 on the homework is wild', 20],
+    [classChats[3], 'kim', 'Does anyone have the lecture slides?', 18],
+    [team, 'ana', 'Welcome to BChat!', 15],
+    [dm, 'ana', 'Want to study for 35L together?', 10],
+  ];
+  for (const [chat, username, text, minutesAgo] of messages) {
+    const message = await Message.create({ chatId: chat._id, senderId: byName[username]._id, text, createdAt: at(minutesAgo), updatedAt: at(minutesAgo) });
+    await Chat.updateOne({ _id: chat._id }, { $set: { lastMessageAt: message.createdAt } });
+  }
+
+  console.log('Seed complete.\n');
+  console.log(`Courses (term ${term}): ${courses.map((c) => `${c.subjectArea} ${c.number}`).join(', ')}`);
+  console.log('People:');
+  for (const user of users) console.log(`- ${user.displayName} (@${user.username}) id=${user._id}`);
+  console.log(`- ${deleted.displayName} (@${deleted.username}) id=${deleted._id}`);
+  if (me) console.log(`\nYou (${myEmail}) are in COM SCI 35L, MATH 32B, BChat Team and a DM with Ana.`);
+  else console.log('\nTip: sign in with Google against the local server, then run with --me <your email> to join these chats.');
 
   await conn.close();
 }
 
 main().catch(async (err) => {
-  console.error(err);
+  console.error(err.message || err);
   try {
     await mongoose.connection.close();
   } catch (_) {}
   process.exit(1);
 });
-

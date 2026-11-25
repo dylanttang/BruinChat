@@ -75,7 +75,25 @@ NODE_PATH=server/node_modules node scripts/fetchCourses.js --term 26F --dry-run 
 NODE_PATH=server/node_modules node scripts/fetchCourses.js --term 26F             # write to the database
 ```
 
-`scripts/seed.js` **deletes every user, chat and message** before creating fake test data. It refuses to run unless `MONGODB_DB` names a dev/test database and you pass `--wipe`. Never point it at the real database.
+### Local test database
+
+Test against a database on your own computer, not the real one. Needs Docker Desktop running.
+
+```bash
+npm run db:start      # starts MongoDB in Docker (data survives restarts)
+```
+
+In `server/.env` set `MONGODB_URI=mongodb://127.0.0.1:27017` and `MONGODB_DB=bruinchat-dev`. Then fill it with fake classmates, class chats, a DM and a team chat, including someone blocked, banned and deleted:
+
+```bash
+npm run db:seed                            # wipes and reseeds the local database
+npm run db:seed -- --me you@g.ucla.edu     # after signing in once locally: puts you in the seeded chats
+npm run db:stop
+```
+
+`scripts/seed.js` **deletes every user, chat and message**. It refuses to run unless `MONGODB_DB` names a dev/test database. Never point it at the real database.
+
+Server tests that need real database behavior use `server/tests/helpers/realDb.js`, which starts a throwaway MongoDB in memory; no Docker needed for `npm test`.
 
 ## Deployment
 
